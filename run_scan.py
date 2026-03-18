@@ -3,7 +3,7 @@ from __future__ import annotations
 import pandas as pd
 
 from minervini_system.config import ScanConfig
-from minervini_system.data import download_ohlcv, get_kospi200_tickers
+from minervini_system.data import download_ohlcv
 from minervini_system.scanner import latest_scan_table
 
 
@@ -33,17 +33,22 @@ MARKETS = {
         "regime_symbol": "SPY",
     },
     "KR": {
-        "ticker_source": "kospi200",
+        "tickers": [
+            "000660.KS",
+            "005930.KS",
+            "042700.KS",
+            "000990.KS",
+            "058470.KQ",
+            "039030.KQ",
+            "086520.KQ",
+            "247540.KQ",
+            "240810.KQ",
+            "078600.KQ",
+        ],
         "benchmark": "^KS11",
         "regime_symbol": "^KS11",
     },
 }
-
-
-def resolve_tickers(market_config: dict[str, object]) -> list[str]:
-    if market_config.get("ticker_source") == "kospi200":
-        return get_kospi200_tickers()
-    return list(market_config["tickers"])
 
 
 def scan_market(
@@ -72,7 +77,7 @@ def main() -> None:
     for market, market_config in MARKETS.items():
         market_result = scan_market(
             market=market,
-            tickers=resolve_tickers(market_config),
+            tickers=list(market_config["tickers"]),
             benchmark=market_config["benchmark"],
             regime_symbol=market_config["regime_symbol"],
             start="2023-01-01",

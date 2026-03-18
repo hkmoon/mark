@@ -7,7 +7,7 @@ import pandas as pd
 from zoneinfo import ZoneInfo
 
 from minervini_system.config import ScanConfig
-from minervini_system.data import download_ohlcv, get_kospi200_tickers
+from minervini_system.data import download_ohlcv
 from minervini_system.scanner import latest_scan_table
 
 
@@ -38,7 +38,18 @@ MARKETS = {
         "timezone": "America/New_York",
     },
     "KR": {
-        "ticker_source": "kospi200",
+        "tickers": [
+            "000660.KS",
+            "005930.KS",
+            "042700.KS",
+            "000990.KS",
+            "058470.KQ",
+            "039030.KQ",
+            "086520.KQ",
+            "247540.KQ",
+            "240810.KQ",
+            "078600.KQ",
+        ],
         "benchmark": "^KS11",
         "regime_symbol": "^KS11",
         "timezone": "Asia/Seoul",
@@ -48,12 +59,6 @@ REPORT_PATH = Path("scan_report.md")
 HTML_REPORT_PATH = Path("scan_report.html")
 CSV_PATH = Path("scan_results.csv")
 HISTORY_PATH = Path("report_history/scan_history.csv")
-
-
-def resolve_tickers(market_config: dict[str, object]) -> list[str]:
-    if market_config.get("ticker_source") == "kospi200":
-        return get_kospi200_tickers()
-    return list(market_config["tickers"])
 
 
 def build_markdown_report(
@@ -559,7 +564,7 @@ def main() -> None:
     market_regimes: dict[str, dict[str, object]] = {}
 
     for market, market_config in MARKETS.items():
-        tickers = resolve_tickers(market_config)
+        tickers = list(market_config["tickers"])
         benchmark = market_config["benchmark"]
         regime_symbol = market_config["regime_symbol"]
         market_tz = ZoneInfo(market_config["timezone"])

@@ -88,7 +88,6 @@ For example, if you use Gmail SMTP, `EMAIL_FROM` is usually the Gmail address an
 - The backtest currently supports one ticker at a time.
 - The default scan universe includes both U.S. and South Korea tickers.
 - The scan now applies a market regime check, RS percentile ranking, and a Minervini-style watchlist filter.
-- South Korea uses the live KOSPI 200 constituent list at runtime via `pykrx`.
-- If `pykrx` returns an empty constituent list, the runner falls back to the KOSPI 200 components page on Investing.com.
+- South Korea is intentionally narrowed to a Korea AI and semiconductor leader group in the runner scripts.
 - The U.S. universe is intentionally narrowed to an AI and semiconductor leader group in the runner scripts.
 - Good next steps are RS percentile ranking, market regime filters, and a multi-ticker portfolio engine.
