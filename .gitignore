@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pyc
+scan_results.csv
+scan_report.md
+*_equity.csv
+*_trades.csv
