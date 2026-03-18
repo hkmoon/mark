@@ -36,6 +36,7 @@ This repository includes a scheduled GitHub Actions workflow at
 
 - It runs on weekdays at `21:20 UTC`, which is after the U.S. market close year-round.
 - It generates `scan_results.csv` and `scan_report.md`.
+- It also generates `scan_report.html` for email-friendly delivery.
 - It uploads both files as workflow artifacts.
 - It also writes the markdown report into the GitHub Actions job summary.
 
@@ -70,8 +71,8 @@ Add these repository secrets in GitHub:
 
 After those are set, each scheduled run will email:
 
-- message body: `scan_report.md`
-- attachments: `scan_report.md`, `scan_results.csv`
+- message body: `scan_report.html` with a plain-text fallback
+- attachments: `scan_report.html`, `scan_report.md`, `scan_results.csv`
 - recipient: `hkmoon@me.com`
 
 For example, if you use Gmail SMTP, `EMAIL_FROM` is usually the Gmail address and `SMTP_PASSWORD` is an app password.
