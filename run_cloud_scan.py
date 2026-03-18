@@ -118,6 +118,10 @@ def build_markdown_report(
         breakout_rows = market_rows[market_rows["BreakoutReady"]].head(10)
         vcp_rows = market_rows[market_rows["VCPCandidate"]].head(10)
         watchlist_rows = market_rows[market_rows["Watchlist"]].head(10)
+        near_miss_rows = market_rows[
+            (market_rows["NearHigh"])
+            & (~market_rows["VCPCandidate"])
+        ].sort_values(["RS_Rank", "TrendTemplate"], ascending=[False, False]).head(10)
 
         lines.append("### Breakout Candidates")
         lines.append("")
@@ -151,6 +155,18 @@ def build_markdown_report(
             lines.append(
                 watchlist_rows[
                     ["Ticker", "Close", "RS_Rank", "NearHigh", "QuietBase", "RS_6M"]
+                ].to_markdown(index=False)
+            )
+
+        lines.append("")
+        lines.append("### VCP Near Miss")
+        lines.append("")
+        if near_miss_rows.empty:
+            lines.append("No near-miss names passed today.")
+        else:
+            lines.append(
+                near_miss_rows[
+                    ["Ticker", "Close", "RS_Rank", "TrendTemplate", "NearHigh", "QuietBase"]
                 ].to_markdown(index=False)
             )
         lines.append("")
@@ -344,6 +360,10 @@ def build_html_report(
         breakout_rows = market_rows[market_rows["BreakoutReady"]].head(10)
         vcp_rows = market_rows[market_rows["VCPCandidate"]].head(10)
         watchlist_rows = market_rows[market_rows["Watchlist"]].head(10)
+        near_miss_rows = market_rows[
+            (market_rows["NearHigh"])
+            & (~market_rows["VCPCandidate"])
+        ].sort_values(["RS_Rank", "TrendTemplate"], ascending=[False, False]).head(10)
         status_html = ""
         if market in skipped_markets:
             status_html = (
@@ -386,6 +406,15 @@ def build_html_report(
                 ]
             )
         )
+        near_miss_html = (
+            "<p class='empty'>No near-miss names passed today.</p>"
+            if near_miss_rows.empty
+            else _html_table(
+                near_miss_rows[
+                    ["Ticker", "Close", "RS_Rank", "TrendTemplate", "NearHigh", "QuietBase"]
+                ]
+            )
+        )
         chart_html = _svg_line_chart(
             benchmark_history.get(market, pd.Series(dtype=float)),
             f"{market} benchmark trend",
@@ -419,6 +448,8 @@ def build_html_report(
               {vcp_html}
               <h3>Watchlist</h3>
               {watchlist_html}
+              <h3>VCP Near Miss</h3>
+              {near_miss_html}
             </section>
             """
         )
