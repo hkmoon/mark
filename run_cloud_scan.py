@@ -92,7 +92,8 @@ def build_markdown_report(
 
         market_rows = result[result["Market"] == market]
         breakout_rows = market_rows[market_rows["BreakoutReady"]].head(10)
-        vcp_rows = market_rows[market_rows["Watchlist"]].head(10)
+        vcp_rows = market_rows[market_rows["VCPCandidate"]].head(10)
+        watchlist_rows = market_rows[market_rows["Watchlist"]].head(10)
 
         lines.append("### Breakout Candidates")
         lines.append("")
@@ -113,6 +114,18 @@ def build_markdown_report(
         else:
             lines.append(
                 vcp_rows[
+                    ["Ticker", "Close", "RS_Rank", "NearHigh", "QuietBase", "RS_6M"]
+                ].to_markdown(index=False)
+            )
+
+        lines.append("")
+        lines.append("### Watchlist")
+        lines.append("")
+        if watchlist_rows.empty:
+            lines.append("No watchlist names passed today.")
+        else:
+            lines.append(
+                watchlist_rows[
                     ["Ticker", "Close", "RS_Rank", "NearHigh", "QuietBase", "RS_6M"]
                 ].to_markdown(index=False)
             )
@@ -289,7 +302,8 @@ def build_html_report(
     for market in MARKETS:
         market_rows = result[result["Market"] == market]
         breakout_rows = market_rows[market_rows["BreakoutReady"]].head(10)
-        vcp_rows = market_rows[market_rows["Watchlist"]].head(10)
+        vcp_rows = market_rows[market_rows["VCPCandidate"]].head(10)
+        watchlist_rows = market_rows[market_rows["Watchlist"]].head(10)
         status_html = ""
         if market in skipped_markets:
             status_html = (
@@ -319,6 +333,15 @@ def build_html_report(
             if vcp_rows.empty
             else _html_table(
                 vcp_rows[
+                    ["Ticker", "Close", "RS_Rank", "NearHigh", "QuietBase", "RS_6M"]
+                ]
+            )
+        )
+        watchlist_html = (
+            "<p class='empty'>No watchlist names passed today.</p>"
+            if watchlist_rows.empty
+            else _html_table(
+                watchlist_rows[
                     ["Ticker", "Close", "RS_Rank", "NearHigh", "QuietBase", "RS_6M"]
                 ]
             )
@@ -354,6 +377,8 @@ def build_html_report(
               {breakout_html}
               <h3>VCP Candidates</h3>
               {vcp_html}
+              <h3>Watchlist</h3>
+              {watchlist_html}
             </section>
             """
         )
