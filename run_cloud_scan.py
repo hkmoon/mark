@@ -53,6 +53,7 @@ MARKETS = {
 REPORT_PATH = Path("scan_report.md")
 HTML_REPORT_PATH = Path("scan_report.html")
 CSV_PATH = Path("scan_results.csv")
+HISTORY_PATH = Path("report_history/scan_history.csv")
 
 
 def build_markdown_report(
@@ -168,12 +169,106 @@ def _svg_line_chart(series: pd.Series, title: str, stroke: str) -> str:
     """
 
 
+def _svg_multi_line_chart(
+    df: pd.DataFrame,
+    title: str,
+    series_config: list[tuple[str, str, str]],
+) -> str:
+    chart_df = df.tail(30).copy()
+    if chart_df.empty or len(chart_df) < 2:
+        return "<p class='empty'>Not enough history for chart.</p>"
+
+    width = 720
+    height = 240
+    pad_x = 22
+    pad_y = 20
+    chart_w = width - (pad_x * 2)
+    chart_h = height - (pad_y * 2)
+
+    valid_columns = [column for column, _, _ in series_config if column in chart_df.columns]
+    if not valid_columns:
+        return "<p class='empty'>Not enough history for chart.</p>"
+
+    all_values = []
+    for column in valid_columns:
+        all_values.extend(chart_df[column].fillna(0).astype(float).tolist())
+
+    min_v = min(all_values)
+    max_v = max(all_values)
+    span = max(max_v - min_v, 1.0)
+    baseline = pad_y + chart_h
+
+    polylines = []
+    legend_items = []
+    for column, label, color in series_config:
+        if column not in chart_df.columns:
+            continue
+        values = chart_df[column].fillna(0).astype(float).tolist()
+        points = []
+        for idx, value in enumerate(values):
+            x = pad_x + (chart_w * idx / (len(values) - 1))
+            y = pad_y + chart_h - (((value - min_v) / span) * chart_h)
+            points.append(f"{x:.1f},{y:.1f}")
+        polylines.append(
+            f"<polyline fill='none' stroke='{color}' stroke-width='3' points='{' '.join(points)}' />"
+        )
+        legend_items.append(
+            f"<span class='legend-item'><span class='legend-dot' style='background:{color};'></span>{label}</span>"
+        )
+
+    return f"""
+    <div class="chart-wrap">
+      <div class="chart-header">
+        <div>
+          <p class="chart-title">{title}</p>
+          <p class="chart-subtitle">Last 30 recorded sessions</p>
+        </div>
+        <div class="chart-legend">{''.join(legend_items)}</div>
+      </div>
+      <svg viewBox="0 0 {width} {height}" role="img" aria-label="{title}">
+        <line x1="{pad_x}" y1="{baseline:.1f}" x2="{width - pad_x}" y2="{baseline:.1f}" stroke="#d7e2ee" stroke-width="1" />
+        <line x1="{pad_x}" y1="{pad_y}" x2="{pad_x}" y2="{baseline:.1f}" stroke="#d7e2ee" stroke-width="1" />
+        {''.join(polylines)}
+      </svg>
+    </div>
+    """
+
+
+def load_history() -> pd.DataFrame:
+    if not HISTORY_PATH.exists():
+        return pd.DataFrame()
+    history = pd.read_csv(HISTORY_PATH)
+    if history.empty:
+        return history
+    history["Date"] = pd.to_datetime(history["Date"])
+    return history
+
+
+def update_history(history: pd.DataFrame, snapshots: list[dict]) -> pd.DataFrame:
+    incoming = pd.DataFrame(snapshots)
+    if incoming.empty:
+        return history
+
+    incoming["Date"] = pd.to_datetime(incoming["Date"])
+    combined = pd.concat([history, incoming], ignore_index=True) if not history.empty else incoming
+    combined = combined.sort_values(["Market", "Date"]).drop_duplicates(
+        subset=["Market", "Date"],
+        keep="last",
+    )
+    HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
+    combined_to_save = combined.copy()
+    combined_to_save["Date"] = combined_to_save["Date"].dt.strftime("%Y-%m-%d")
+    combined_to_save.to_csv(HISTORY_PATH, index=False)
+    return combined
+
+
 def build_html_report(
     result: pd.DataFrame,
     generated_at_utc: str,
     freshness: dict[str, str],
     skipped_markets: dict[str, str],
     benchmark_history: dict[str, pd.Series],
+    metric_history: pd.DataFrame,
 ) -> str:
     sections: list[str] = []
     chart_colors = {"US": "#0b7285", "KR": "#d9480f"}
@@ -211,6 +306,16 @@ def build_html_report(
             f"{market} benchmark trend",
             chart_colors.get(market, "#1d6fa5"),
         )
+        market_history = metric_history[metric_history["Market"] == market].copy()
+        activity_chart = _svg_multi_line_chart(
+            market_history,
+            f"{market} setup activity",
+            [
+                ("BreakoutCount", "Breakouts", "#1c7ed6"),
+                ("VCPCount", "VCP", "#f08c00"),
+                ("TrendTemplateCount", "Trend", "#2b8a3e"),
+            ],
+        )
 
         sections.append(
             f"""
@@ -220,6 +325,8 @@ def build_html_report(
               {status_html}
               <h3>Benchmark Trend</h3>
               {chart_html}
+              <h3>Setup Activity Trend</h3>
+              {activity_chart}
               <h3>Breakout Candidates</h3>
               {breakout_html}
               <h3>VCP Candidates</h3>
@@ -305,6 +412,25 @@ def build_html_report(
       }}
       .chart-stats {{
         text-align: right;
+      }}
+      .chart-legend {{
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        justify-content: flex-end;
+        font-size: 12px;
+        color: #4a6178;
+      }}
+      .legend-item {{
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }}
+      .legend-dot {{
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        display: inline-block;
       }}
       .chart-last {{
         display: block;
@@ -395,6 +521,7 @@ def main() -> None:
     freshness: dict[str, str] = {}
     skipped_markets: dict[str, str] = {}
     benchmark_history: dict[str, pd.Series] = {}
+    history_snapshots: list[dict] = []
 
     for market, market_config in MARKETS.items():
         tickers = market_config["tickers"]
@@ -421,12 +548,35 @@ def main() -> None:
             benchmark=benchmark,
             start="2023-01-01",
         )
+        breakout_count = 0 if market_result.empty else int(market_result["Breakout"].sum())
+        vcp_count = 0 if market_result.empty else int(market_result["VCPCandidate"].sum())
+        trend_count = 0 if market_result.empty else int(market_result["TrendTemplate"].sum())
+        top_rs_ticker = (
+            ""
+            if market_result.empty
+            else str(
+                market_result.sort_values("RS_6M", ascending=False)
+                .iloc[0]["Ticker"]
+            )
+        )
+        history_snapshots.append(
+            {
+                "Date": str(latest_market_date),
+                "Market": market,
+                "BreakoutCount": breakout_count,
+                "VCPCount": vcp_count,
+                "TrendTemplateCount": trend_count,
+                "TopRSTicker": top_rs_ticker,
+            }
+        )
         if not market_result.empty:
             fresh_results.append(market_result)
 
     result = pd.concat(fresh_results, ignore_index=True) if fresh_results else pd.DataFrame()
     if not result.empty:
         result.to_csv(CSV_PATH, index=False)
+    history_df = load_history()
+    history_df = update_history(history_df, history_snapshots)
     report = build_markdown_report(
         result=result,
         generated_at_utc=now_utc.isoformat(),
@@ -439,6 +589,7 @@ def main() -> None:
         freshness=freshness,
         skipped_markets=skipped_markets,
         benchmark_history=benchmark_history,
+        metric_history=history_df,
     )
     REPORT_PATH.write_text(report, encoding="utf-8")
     HTML_REPORT_PATH.write_text(html_report, encoding="utf-8")

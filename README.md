@@ -37,6 +37,7 @@ This repository includes a scheduled GitHub Actions workflow at
 - It runs on weekdays at `21:20 UTC`, which is after the U.S. market close year-round.
 - It generates `scan_results.csv` and `scan_report.md`.
 - It also generates `scan_report.html` for email-friendly delivery.
+- It stores daily market activity history in `report_history/scan_history.csv`.
 - It uploads both files as workflow artifacts.
 - It also writes the markdown report into the GitHub Actions job summary.
 - It deploys the latest HTML report to GitHub Pages.
