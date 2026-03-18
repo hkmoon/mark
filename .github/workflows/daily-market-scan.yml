@@ -41,3 +41,68 @@ jobs:
             scan_report.md
             scan_results.csv
           if-no-files-found: warn
+
+      - name: Email scan report
+        env:
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          EMAIL_TO: hkmoon@me.com
+        run: |
+          python - <<'PY'
+          import os
+          import smtplib
+          from email.message import EmailMessage
+          from pathlib import Path
+
+          required = ["SMTP_HOST", "SMTP_PORT", "SMTP_USERNAME", "SMTP_PASSWORD", "EMAIL_FROM"]
+          missing = [name for name in required if not os.environ.get(name)]
+          if missing:
+              print(f"Skipping email delivery. Missing secrets: {', '.join(missing)}")
+              raise SystemExit(0)
+
+          report_path = Path("scan_report.md")
+          csv_path = Path("scan_results.csv")
+          report_text = report_path.read_text(encoding="utf-8") if report_path.exists() else "No report generated."
+
+          msg = EmailMessage()
+          msg["Subject"] = "Daily Market Scan"
+          msg["From"] = os.environ["EMAIL_FROM"]
+          msg["To"] = os.environ["EMAIL_TO"]
+          msg.set_content(report_text)
+
+          if report_path.exists():
+              msg.add_attachment(
+                  report_path.read_bytes(),
+                  maintype="text",
+                  subtype="markdown",
+                  filename=report_path.name,
+              )
+
+          if csv_path.exists():
+              msg.add_attachment(
+                  csv_path.read_bytes(),
+                  maintype="text",
+                  subtype="csv",
+                  filename=csv_path.name,
+              )
+
+          host = os.environ["SMTP_HOST"]
+          port = int(os.environ["SMTP_PORT"])
+          username = os.environ["SMTP_USERNAME"]
+          password = os.environ["SMTP_PASSWORD"]
+
+          if port == 465:
+              with smtplib.SMTP_SSL(host, port) as server:
+                  server.login(username, password)
+                  server.send_message(msg)
+          else:
+              with smtplib.SMTP(host, port) as server:
+                  server.starttls()
+                  server.login(username, password)
+                  server.send_message(msg)
+
+          print("Email sent to hkmoon@me.com")
+          PY

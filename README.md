@@ -55,7 +55,25 @@ python run_cloud_scan.py
 
 - Open the workflow run and read the job summary for a quick report.
 - Download the `daily-market-scan` artifact to get the CSV and markdown report.
-- If you want delivery to Slack, email, or Telegram, we can add one more step with GitHub Secrets.
+- The workflow can email the report to `hkmoon@me.com` once SMTP secrets are configured.
+
+### Email setup
+
+Add these repository secrets in GitHub:
+
+- `SMTP_HOST`
+- `SMTP_PORT`
+- `SMTP_USERNAME`
+- `SMTP_PASSWORD`
+- `EMAIL_FROM`
+
+After those are set, each scheduled run will email:
+
+- message body: `scan_report.md`
+- attachments: `scan_report.md`, `scan_results.csv`
+- recipient: `hkmoon@me.com`
+
+For example, if you use Gmail SMTP, `EMAIL_FROM` is usually the Gmail address and `SMTP_PASSWORD` is an app password.
 
 ## Notes
 
