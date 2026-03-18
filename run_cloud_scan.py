@@ -68,12 +68,36 @@ def build_markdown_report(
     skipped_markets: dict[str, str],
     market_regimes: dict[str, dict[str, object]],
 ) -> str:
+    summary_rows = []
+    if not result.empty:
+        summary_rows = (
+            result.groupby("Market")[["BreakoutReady", "VCPCandidate", "Watchlist"]]
+            .sum()
+            .rename(
+                columns={
+                    "BreakoutReady": "Breakouts",
+                    "VCPCandidate": "VCPs",
+                    "Watchlist": "WatchlistNames",
+                }
+            )
+            .reset_index()
+            .to_dict("records")
+        )
+
     lines = [
         "# Daily Market Scan",
         "",
         f"- Generated at (UTC): `{generated_at_utc}`",
         "",
     ]
+
+    lines.append("## Scan Summary")
+    lines.append("")
+    if not summary_rows:
+        lines.append("No summary available.")
+    else:
+        lines.append(pd.DataFrame(summary_rows).to_markdown(index=False))
+    lines.append("")
 
     for market in MARKETS:
         lines.append(f"## {market} Market")
@@ -298,6 +322,22 @@ def build_html_report(
 ) -> str:
     sections: list[str] = []
     chart_colors = {"US": "#0b7285", "KR": "#d9480f"}
+    if result.empty:
+        summary_html = "<p class='empty'>No summary available.</p>"
+    else:
+        summary_df = (
+            result.groupby("Market")[["BreakoutReady", "VCPCandidate", "Watchlist"]]
+            .sum()
+            .rename(
+                columns={
+                    "BreakoutReady": "Breakouts",
+                    "VCPCandidate": "VCPs",
+                    "Watchlist": "WatchlistNames",
+                }
+            )
+            .reset_index()
+        )
+        summary_html = _html_table(summary_df)
 
     for market in MARKETS:
         market_rows = result[result["Market"] == market]
@@ -552,6 +592,10 @@ def build_html_report(
         <h1>Daily Market Scan</h1>
         <p>Generated at (UTC): <strong>{generated_at_utc}</strong></p>
         <p>Markets covered: U.S. and South Korea</p>
+      </section>
+      <section class="market-card">
+        <h2>Scan Summary</h2>
+        {summary_html}
       </section>
       {"".join(sections)}
     </div>

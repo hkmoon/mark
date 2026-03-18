@@ -87,6 +87,21 @@ def main() -> None:
 
     result = pd.concat(results, ignore_index=True) if results else pd.DataFrame()
     if not result.empty:
+        summary = (
+            result.groupby("Market")[["BreakoutReady", "VCPCandidate", "Watchlist"]]
+            .sum()
+            .rename(
+                columns={
+                    "BreakoutReady": "Breakouts",
+                    "VCPCandidate": "VCPs",
+                    "Watchlist": "WatchlistNames",
+                }
+            )
+            .reset_index()
+        )
+        print("=== Scan Summary ===")
+        print(summary.to_string(index=False))
+        print("")
         filtered = result[
             [
                 "Market",
