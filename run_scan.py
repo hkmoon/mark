@@ -27,6 +27,7 @@ MARKETS = {
             "AMD",
         ],
         "benchmark": "^GSPC",
+        "regime_symbol": "SPY",
     },
     "KR": {
         "tickers": [
@@ -42,18 +43,29 @@ MARKETS = {
             "214150.KQ",
         ],
         "benchmark": "^KS11",
+        "regime_symbol": "^KS11",
     },
 }
 
 
-def scan_market(market: str, tickers: list[str], benchmark: str, start: str) -> pd.DataFrame:
+def scan_market(
+    market: str,
+    tickers: list[str],
+    benchmark: str,
+    regime_symbol: str,
+    start: str,
+) -> pd.DataFrame:
     data_map = download_ohlcv(tickers, start=start)
     benchmark_map = download_ohlcv([benchmark], start=start)
+    regime_map = download_ohlcv([regime_symbol], start=start)
     benchmark_df = benchmark_map[benchmark]
-    result = latest_scan_table(data_map, benchmark_df, ScanConfig())
+    regime_df = regime_map[regime_symbol]
+    result = latest_scan_table(data_map, benchmark_df, regime_df, ScanConfig())
     if result.empty:
         return result
     result["Market"] = market
+    result["RegimeSymbol"] = regime_symbol
+    result["Benchmark"] = benchmark
     return result
 
 
@@ -64,13 +76,31 @@ def main() -> None:
             market=market,
             tickers=market_config["tickers"],
             benchmark=market_config["benchmark"],
+            regime_symbol=market_config["regime_symbol"],
             start="2023-01-01",
         )
         if not market_result.empty:
             results.append(market_result)
 
     result = pd.concat(results, ignore_index=True) if results else pd.DataFrame()
-    print(result.to_string(index=False))
+    if not result.empty:
+        filtered = result[
+            [
+                "Market",
+                "Ticker",
+                "Close",
+                "MarketTrendOK",
+                "TrendTemplate",
+                "RS_Rank",
+                "VCPCandidate",
+                "Breakout",
+                "Watchlist",
+                "BreakoutReady",
+            ]
+        ]
+        print(filtered.to_string(index=False))
+    else:
+        print("No scan results.")
     result.to_csv("scan_results.csv", index=False)
     print("\nSaved to scan_results.csv")
 

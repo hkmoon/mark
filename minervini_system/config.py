@@ -5,12 +5,14 @@ from dataclasses import dataclass
 class ScanConfig:
     min_price: float = 10.0
     min_avg_dollar_volume: float = 5_000_000
+    rs_rank_min: float = 80.0
     breakout_buffer: float = 0.001
     volume_ratio_threshold: float = 1.5
     lookback_high: int = 20
     base_lookback: int = 60
     contraction_window: int = 3
     max_contraction_ratio: float = 0.6
+    near_high_ratio: float = 0.90
 
 
 @dataclass

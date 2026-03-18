@@ -87,4 +87,6 @@ For example, if you use Gmail SMTP, `EMAIL_FROM` is usually the Gmail address an
 - VCP detection is heuristic, not a full structural pattern recognizer.
 - The backtest currently supports one ticker at a time.
 - The default scan universe includes both U.S. and South Korea tickers.
+- The scan now applies a market regime check, RS percentile ranking, and a Minervini-style watchlist filter.
+- Current universes are configurable market lists in the runner scripts; they are not yet full S&P 500 or Nasdaq 100 constituent feeds.
 - Good next steps are RS percentile ranking, market regime filters, and a multi-ticker portfolio engine.

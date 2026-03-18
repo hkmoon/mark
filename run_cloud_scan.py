@@ -31,6 +31,7 @@ MARKETS = {
             "AMD",
         ],
         "benchmark": "^GSPC",
+        "regime_symbol": "SPY",
         "timezone": "America/New_York",
     },
     "KR": {
@@ -47,6 +48,7 @@ MARKETS = {
             "214150.KQ",
         ],
         "benchmark": "^KS11",
+        "regime_symbol": "^KS11",
         "timezone": "Asia/Seoul",
     },
 }
@@ -61,6 +63,7 @@ def build_markdown_report(
     generated_at_utc: str,
     freshness: dict[str, str],
     skipped_markets: dict[str, str],
+    market_regimes: dict[str, dict[str, object]],
 ) -> str:
     lines = [
         "# Daily Market Scan",
@@ -73,14 +76,20 @@ def build_markdown_report(
         lines.append(f"## {market} Market")
         lines.append("")
         lines.append(f"- Latest market date: `{freshness.get(market, 'unknown')}`")
+        regime = market_regimes.get(market, {})
+        if regime:
+            lines.append(
+                f"- Market trend: `{'ON' if regime.get('MarketTrendOK') else 'OFF'}` "
+                f"(50DMA={regime.get('Above50DMA')}, 200DMA={regime.get('Above200DMA')})"
+            )
         if market in skipped_markets:
             lines.append(f"- Status: skipped ({skipped_markets[market]})")
             lines.append("")
             continue
 
         market_rows = result[result["Market"] == market]
-        breakout_rows = market_rows[market_rows["Breakout"]].head(10)
-        vcp_rows = market_rows[market_rows["VCPCandidate"]].head(10)
+        breakout_rows = market_rows[market_rows["BreakoutReady"]].head(10)
+        vcp_rows = market_rows[market_rows["Watchlist"]].head(10)
 
         lines.append("### Breakout Candidates")
         lines.append("")
@@ -89,7 +98,7 @@ def build_markdown_report(
         else:
             lines.append(
                 breakout_rows[
-                    ["Ticker", "Close", "TrendTemplate", "VCPCandidate", "RS_6M", "ADV50"]
+                    ["Ticker", "Close", "RS_Rank", "TrendTemplate", "VCPCandidate", "RS_6M"]
                 ].to_markdown(index=False)
             )
 
@@ -101,7 +110,7 @@ def build_markdown_report(
         else:
             lines.append(
                 vcp_rows[
-                    ["Ticker", "Close", "TrendTemplate", "Breakout", "RS_6M", "ADV50"]
+                    ["Ticker", "Close", "RS_Rank", "TrendTemplate", "Breakout", "RS_6M"]
                 ].to_markdown(index=False)
             )
         lines.append("")
@@ -111,7 +120,7 @@ def build_markdown_report(
 
 def _html_table(df: pd.DataFrame) -> str:
     display_df = df.copy()
-    for column in ["Close", "RS_6M", "ADV50"]:
+    for column in ["Close", "RS_6M", "ADV50", "RS_Rank"]:
         if column in display_df.columns:
             display_df[column] = display_df[column].map(
                 lambda value: f"{value:,.2f}" if pd.notna(value) else ""
@@ -269,18 +278,28 @@ def build_html_report(
     skipped_markets: dict[str, str],
     benchmark_history: dict[str, pd.Series],
     metric_history: pd.DataFrame,
+    market_regimes: dict[str, dict[str, object]],
 ) -> str:
     sections: list[str] = []
     chart_colors = {"US": "#0b7285", "KR": "#d9480f"}
 
     for market in MARKETS:
         market_rows = result[result["Market"] == market]
-        breakout_rows = market_rows[market_rows["Breakout"]].head(10)
-        vcp_rows = market_rows[market_rows["VCPCandidate"]].head(10)
+        breakout_rows = market_rows[market_rows["BreakoutReady"]].head(10)
+        vcp_rows = market_rows[market_rows["Watchlist"]].head(10)
         status_html = ""
         if market in skipped_markets:
             status_html = (
                 f"<p class='status skipped'>Skipped: {skipped_markets[market]}</p>"
+            )
+        regime = market_regimes.get(market, {})
+        regime_html = ""
+        if regime:
+            tone = "good" if regime.get("MarketTrendOK") else "warning"
+            regime_html = (
+                f"<p class='status {tone}'>Market trend "
+                f"{'ON' if regime.get('MarketTrendOK') else 'OFF'}: "
+                f"above 50DMA={regime.get('Above50DMA')}, above 200DMA={regime.get('Above200DMA')}</p>"
             )
 
         breakout_html = (
@@ -288,7 +307,7 @@ def build_html_report(
             if breakout_rows.empty
             else _html_table(
                 breakout_rows[
-                    ["Ticker", "Close", "TrendTemplate", "VCPCandidate", "RS_6M", "ADV50"]
+                    ["Ticker", "Close", "RS_Rank", "TrendTemplate", "VCPCandidate", "RS_6M"]
                 ]
             )
         )
@@ -297,7 +316,7 @@ def build_html_report(
             if vcp_rows.empty
             else _html_table(
                 vcp_rows[
-                    ["Ticker", "Close", "TrendTemplate", "Breakout", "RS_6M", "ADV50"]
+                    ["Ticker", "Close", "RS_Rank", "TrendTemplate", "Breakout", "RS_6M"]
                 ]
             )
         )
@@ -323,6 +342,7 @@ def build_html_report(
               <h2>{market} Market</h2>
               <p class="meta">Latest market date: <strong>{freshness.get(market, "unknown")}</strong></p>
               {status_html}
+              {regime_html}
               <h3>Benchmark Trend</h3>
               {chart_html}
               <h3>Setup Activity Trend</h3>
@@ -461,6 +481,14 @@ def build_html_report(
         background: #fff2df;
         color: #8a5a00;
       }}
+      .good {{
+        background: #e6f7ef;
+        color: #13663c;
+      }}
+      .warning {{
+        background: #fff2df;
+        color: #8a5a00;
+      }}
       .empty {{
         padding: 14px 16px;
         border-radius: 12px;
@@ -504,11 +532,19 @@ def build_html_report(
 """
 
 
-def scan_market(market: str, tickers: list[str], benchmark: str, start: str) -> pd.DataFrame:
+def scan_market(
+    market: str,
+    tickers: list[str],
+    benchmark: str,
+    regime_symbol: str,
+    start: str,
+) -> pd.DataFrame:
     data_map = download_ohlcv(tickers, start=start)
     benchmark_map = download_ohlcv([benchmark], start=start)
+    regime_map = download_ohlcv([regime_symbol], start=start)
     benchmark_df = benchmark_map[benchmark]
-    result = latest_scan_table(data_map, benchmark_df, ScanConfig())
+    regime_df = regime_map[regime_symbol]
+    result = latest_scan_table(data_map, benchmark_df, regime_df, ScanConfig())
     if result.empty:
         return result
     result["Market"] = market
@@ -522,16 +558,20 @@ def main() -> None:
     skipped_markets: dict[str, str] = {}
     benchmark_history: dict[str, pd.Series] = {}
     history_snapshots: list[dict] = []
+    market_regimes: dict[str, dict[str, object]] = {}
 
     for market, market_config in MARKETS.items():
         tickers = market_config["tickers"]
         benchmark = market_config["benchmark"]
+        regime_symbol = market_config["regime_symbol"]
         market_tz = ZoneInfo(market_config["timezone"])
         market_today = now_utc.astimezone(market_tz).date()
 
         data_map = download_ohlcv(tickers, start="2023-01-01")
         benchmark_map = download_ohlcv([benchmark], start="2023-01-01")
+        regime_map = download_ohlcv([regime_symbol], start="2023-01-01")
         benchmark_df = benchmark_map[benchmark]
+        regime_df = regime_map[regime_symbol]
         benchmark_history[market] = benchmark_df["Close"]
         latest_market_timestamp = max(df.index.max() for df in data_map.values())
         latest_market_date = pd.Timestamp(latest_market_timestamp).date()
@@ -546,8 +586,15 @@ def main() -> None:
             market=market,
             tickers=tickers,
             benchmark=benchmark,
+            regime_symbol=regime_symbol,
             start="2023-01-01",
         )
+        if not market_result.empty:
+            market_regimes[market] = {
+                "MarketTrendOK": bool(market_result["MarketTrendOK"].iloc[0]),
+                "Above50DMA": bool(market_result["Above50DMA"].iloc[0]),
+                "Above200DMA": bool(market_result["Above200DMA"].iloc[0]),
+            }
         breakout_count = 0 if market_result.empty else int(market_result["Breakout"].sum())
         vcp_count = 0 if market_result.empty else int(market_result["VCPCandidate"].sum())
         trend_count = 0 if market_result.empty else int(market_result["TrendTemplate"].sum())
@@ -582,6 +629,7 @@ def main() -> None:
         generated_at_utc=now_utc.isoformat(),
         freshness=freshness,
         skipped_markets=skipped_markets,
+        market_regimes=market_regimes,
     )
     html_report = build_html_report(
         result=result,
@@ -590,6 +638,7 @@ def main() -> None:
         skipped_markets=skipped_markets,
         benchmark_history=benchmark_history,
         metric_history=history_df,
+        market_regimes=market_regimes,
     )
     REPORT_PATH.write_text(report, encoding="utf-8")
     HTML_REPORT_PATH.write_text(html_report, encoding="utf-8")

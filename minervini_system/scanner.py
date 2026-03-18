@@ -33,7 +33,8 @@ def trend_template_pass(df: pd.DataFrame, min_price: float, min_adv: float) -> p
 def vcp_candidate(df: pd.DataFrame, config: ScanConfig) -> pd.Series:
     range_contracted = df["RANGE5"] < (df["RANGE20"] * config.max_contraction_ratio)
     volume_dryup = df["Volume"].rolling(5).mean() < (df["VOL50"] * 0.8)
-    return (range_contracted & volume_dryup).fillna(False)
+    near_high = df["Close"] >= (df["52W_HIGH"] * config.near_high_ratio)
+    return (range_contracted & volume_dryup & near_high).fillna(False)
 
 
 def breakout_signal(df: pd.DataFrame, config: ScanConfig) -> pd.Series:
@@ -67,13 +68,35 @@ def scan_one_ticker(
     return out
 
 
+def market_trend_status(benchmark_df: pd.DataFrame) -> dict[str, object]:
+    enriched = add_indicators(benchmark_df)
+    last = enriched.iloc[-1]
+    close = float(last["Close"])
+    sma50 = float(last["SMA50"]) if pd.notna(last["SMA50"]) else None
+    sma200 = float(last["SMA200"]) if pd.notna(last["SMA200"]) else None
+    above_50 = bool(sma50 is not None and close > sma50)
+    above_200 = bool(sma200 is not None and close > sma200)
+    return {
+        "MarketTrendOK": above_50 and above_200,
+        "BenchmarkClose": close,
+        "BenchmarkSMA50": sma50,
+        "BenchmarkSMA200": sma200,
+        "Above50DMA": above_50,
+        "Above200DMA": above_200,
+    }
+
+
 def latest_scan_table(
     data_map: dict[str, pd.DataFrame],
     benchmark_df: pd.DataFrame | None,
+    regime_df: pd.DataFrame | None,
     config: ScanConfig,
 ) -> pd.DataFrame:
     rows = []
     benchmark_close = benchmark_df["Close"] if benchmark_df is not None else None
+    market_status = (
+        market_trend_status(regime_df) if regime_df is not None else {"MarketTrendOK": True}
+    )
 
     for ticker, df in data_map.items():
         if len(df) < 252:
@@ -91,6 +114,10 @@ def latest_scan_table(
                 "Breakout": bool(last["BREAKOUT"]),
                 "RS_6M": None if pd.isna(last["RS_6M"]) else float(last["RS_6M"]),
                 "ADV50": float(last["ADV50"]) if pd.notna(last["ADV50"]) else None,
+                "NearHigh": bool(pd.notna(last["52W_HIGH"]) and last["Close"] >= last["52W_HIGH"] * config.near_high_ratio),
+                "MarketTrendOK": bool(market_status["MarketTrendOK"]),
+                "Above50DMA": bool(market_status.get("Above50DMA", True)),
+                "Above200DMA": bool(market_status.get("Above200DMA", True)),
             }
         )
 
@@ -98,7 +125,17 @@ def latest_scan_table(
     if result.empty:
         return result
 
+    result["RS_Rank"] = result["RS_6M"].rank(pct=True, method="average") * 100
+    result["RS_Rank"] = result["RS_Rank"].fillna(0.0)
+    result["Watchlist"] = (
+        result["MarketTrendOK"]
+        & result["TrendTemplate"]
+        & (result["RS_Rank"] >= config.rs_rank_min)
+        & result["VCPCandidate"]
+    )
+    result["BreakoutReady"] = result["Watchlist"] & result["Breakout"]
+
     return result.sort_values(
-        by=["Breakout", "TrendTemplate", "VCPCandidate", "RS_6M"],
-        ascending=[False, False, False, False],
+        by=["BreakoutReady", "Watchlist", "RS_Rank", "Breakout", "TrendTemplate", "VCPCandidate", "RS_6M"],
+        ascending=[False, False, False, False, False, False, False],
     ).reset_index(drop=True)
