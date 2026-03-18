@@ -13,6 +13,9 @@ class ScanConfig:
     contraction_window: int = 3
     max_contraction_ratio: float = 0.6
     near_high_ratio: float = 0.90
+    tight_range_threshold: float = 0.12
+    tight_close_std_threshold: float = 0.03
+    quiet_volume_ratio: float = 0.70
 
 
 @dataclass

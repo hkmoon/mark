@@ -21,6 +21,7 @@ MARKETS = {
             "TSLA",
             "AAPL",
             "AVGO",
+            "SMCI",
             "PLTR",
             "CRWD",
             "SNOW",
@@ -93,7 +94,7 @@ def build_markdown_report(
         else:
             lines.append(
                 breakout_rows[
-                    ["Ticker", "Close", "RS_Rank", "TrendTemplate", "VCPCandidate", "RS_6M"]
+                    ["Ticker", "Close", "RS_Rank", "NearHigh", "QuietBase", "RS_6M"]
                 ].to_markdown(index=False)
             )
 
@@ -105,7 +106,7 @@ def build_markdown_report(
         else:
             lines.append(
                 vcp_rows[
-                    ["Ticker", "Close", "RS_Rank", "TrendTemplate", "Breakout", "RS_6M"]
+                    ["Ticker", "Close", "RS_Rank", "NearHigh", "QuietBase", "RS_6M"]
                 ].to_markdown(index=False)
             )
         lines.append("")
@@ -302,7 +303,7 @@ def build_html_report(
             if breakout_rows.empty
             else _html_table(
                 breakout_rows[
-                    ["Ticker", "Close", "RS_Rank", "TrendTemplate", "VCPCandidate", "RS_6M"]
+                    ["Ticker", "Close", "RS_Rank", "NearHigh", "QuietBase", "RS_6M"]
                 ]
             )
         )
@@ -311,7 +312,7 @@ def build_html_report(
             if vcp_rows.empty
             else _html_table(
                 vcp_rows[
-                    ["Ticker", "Close", "RS_Rank", "TrendTemplate", "Breakout", "RS_6M"]
+                    ["Ticker", "Close", "RS_Rank", "NearHigh", "QuietBase", "RS_6M"]
                 ]
             )
         )

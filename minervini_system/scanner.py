@@ -6,6 +6,19 @@ from minervini_system.config import ScanConfig
 from minervini_system.indicators import add_indicators, relative_strength_vs_benchmark
 
 
+US_LEADER_TICKERS = {
+    "NVDA",
+    "AVGO",
+    "SMCI",
+    "PLTR",
+    "AMD",
+    "ANET",
+    "CRWD",
+    "MSFT",
+    "META",
+}
+
+
 def trend_template_pass(df: pd.DataFrame, min_price: float, min_adv: float) -> pd.Series:
     close = df["Close"]
     sma50 = df["SMA50"]
@@ -37,6 +50,20 @@ def vcp_candidate(df: pd.DataFrame, config: ScanConfig) -> pd.Series:
     return (range_contracted & volume_dryup & near_high).fillna(False)
 
 
+def tight_action(df: pd.DataFrame, config: ScanConfig) -> pd.Series:
+    close_std_pct = df["Close"].rolling(10).std() / df["Close"].rolling(10).mean()
+    return (
+        (df["RANGE10"] <= config.tight_range_threshold)
+        & (close_std_pct <= config.tight_close_std_threshold)
+    ).fillna(False)
+
+
+def quiet_base(df: pd.DataFrame, config: ScanConfig) -> pd.Series:
+    quiet_volume = df["Volume"].rolling(10).mean() <= (df["VOL50"] * config.quiet_volume_ratio)
+    near_high = df["Close"] >= (df["52W_HIGH"] * config.near_high_ratio)
+    return (quiet_volume & tight_action(df, config) & near_high).fillna(False)
+
+
 def breakout_signal(df: pd.DataFrame, config: ScanConfig) -> pd.Series:
     pivot = df["High"].shift(1).rolling(config.lookback_high).max()
     volume_ratio = df["Volume"] / df["VOL50"]
@@ -56,6 +83,8 @@ def scan_one_ticker(
     out = add_indicators(df)
     out["TREND_OK"] = trend_template_pass(out, config.min_price, config.min_avg_dollar_volume)
     out["VCP_CANDIDATE"] = vcp_candidate(out, config)
+    out["TIGHT_ACTION"] = tight_action(out, config)
+    out["QUIET_BASE"] = quiet_base(out, config)
     out["BREAKOUT"] = breakout_signal(out, config)
 
     if benchmark_close is not None:
@@ -111,6 +140,8 @@ def latest_scan_table(
                 "Close": float(last["Close"]),
                 "TrendTemplate": bool(last["TREND_OK"]),
                 "VCPCandidate": bool(last["VCP_CANDIDATE"]),
+                "QuietBase": bool(last["QUIET_BASE"]),
+                "TightAction": bool(last["TIGHT_ACTION"]),
                 "Breakout": bool(last["BREAKOUT"]),
                 "RS_6M": None if pd.isna(last["RS_6M"]) else float(last["RS_6M"]),
                 "ADV50": float(last["ADV50"]) if pd.notna(last["ADV50"]) else None,
@@ -127,15 +158,19 @@ def latest_scan_table(
 
     result["RS_Rank"] = result["RS_6M"].rank(pct=True, method="average") * 100
     result["RS_Rank"] = result["RS_Rank"].fillna(0.0)
+    result["LeaderTicker"] = result["Ticker"].isin(US_LEADER_TICKERS) | result["Ticker"].str.endswith(".KS")
     result["Watchlist"] = (
         result["MarketTrendOK"]
         & result["TrendTemplate"]
         & (result["RS_Rank"] >= config.rs_rank_min)
+        & result["NearHigh"]
+        & result["QuietBase"]
         & result["VCPCandidate"]
+        & result["LeaderTicker"]
     )
     result["BreakoutReady"] = result["Watchlist"] & result["Breakout"]
 
     return result.sort_values(
-        by=["BreakoutReady", "Watchlist", "RS_Rank", "Breakout", "TrendTemplate", "VCPCandidate", "RS_6M"],
-        ascending=[False, False, False, False, False, False, False],
+        by=["BreakoutReady", "Watchlist", "QuietBase", "RS_Rank", "Breakout", "TrendTemplate", "VCPCandidate", "RS_6M"],
+        ascending=[False, False, False, False, False, False, False, False],
     ).reset_index(drop=True)
