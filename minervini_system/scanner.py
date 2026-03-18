@@ -16,6 +16,29 @@ US_LEADER_TICKERS = {
     "CRWD",
     "MSFT",
     "META",
+    "MU",
+    "ARM",
+    "TSM",
+    "ASML",
+    "AMAT",
+    "LRCX",
+    "KLAC",
+    "MRVL",
+    "QCOM",
+    "MCHP",
+}
+
+KR_LEADER_TICKERS = {
+    "000660.KS",  # SK hynix
+    "005930.KS",  # Samsung Electronics
+    "042700.KS",  # Hanmi Semiconductor
+    "000990.KS",  # DB Hitek
+    "058470.KQ",  # Leeno Industrial
+    "039030.KQ",  # EO Technics
+    "086520.KQ",  # EcoPro
+    "247540.KQ",  # EcoPro BM
+    "240810.KQ",  # Wonik IPS
+    "078600.KQ",  # DMS
 }
 
 
@@ -158,7 +181,7 @@ def latest_scan_table(
 
     result["RS_Rank"] = result["RS_6M"].rank(pct=True, method="average") * 100
     result["RS_Rank"] = result["RS_Rank"].fillna(0.0)
-    result["LeaderTicker"] = result["Ticker"].isin(US_LEADER_TICKERS) | result["Ticker"].str.endswith(".KS")
+    result["LeaderTicker"] = result["Ticker"].isin(US_LEADER_TICKERS | KR_LEADER_TICKERS)
     result["Watchlist"] = (
         result["MarketTrendOK"]
         & result["TrendTemplate"]
