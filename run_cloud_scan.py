@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from html import escape
 from pathlib import Path
+from urllib.parse import quote
 
 import pandas as pd
 from zoneinfo import ZoneInfo
@@ -96,6 +98,21 @@ def format_display_ticker(ticker: str) -> str:
     return f"{DISPLAY_NAMES.get(ticker, ticker)} ({ticker})"
 
 
+def ticker_url(ticker: str) -> str:
+    return f"https://finance.yahoo.com/quote/{quote(ticker, safe='')}/"
+
+
+def format_ticker_markdown(ticker: str) -> str:
+    label = format_display_ticker(ticker)
+    return f"[{label}]({ticker_url(ticker)})"
+
+
+def format_ticker_html(ticker: str) -> str:
+    label = escape(format_display_ticker(ticker))
+    url = escape(ticker_url(ticker), quote=True)
+    return f"<a href=\"{url}\" target=\"_blank\" rel=\"noopener noreferrer\">{label}</a>"
+
+
 def format_number(value: float | int | object) -> str:
     if pd.isna(value):
         return ""
@@ -117,7 +134,7 @@ def markdown_table(df: pd.DataFrame) -> str:
     if "Close" in display_df.columns:
         display_df["Close"] = display_df.apply(format_close_by_market, axis=1)
     if "Ticker" in display_df.columns:
-        display_df["Ticker"] = display_df["Ticker"].map(format_display_ticker)
+        display_df["Ticker"] = display_df["Ticker"].map(format_ticker_markdown)
     for column in ["RS_Rank", "RS_6M", "ADV50"]:
         if column in display_df.columns:
             display_df[column] = display_df[column].map(format_number)
@@ -243,11 +260,11 @@ def _html_table(df: pd.DataFrame) -> str:
     if "Close" in display_df.columns:
         display_df["Close"] = display_df.apply(format_close_by_market, axis=1)
     if "Ticker" in display_df.columns:
-        display_df["Ticker"] = display_df["Ticker"].map(format_display_ticker)
+        display_df["Ticker"] = display_df["Ticker"].map(format_ticker_html)
     for column in ["RS_6M", "ADV50", "RS_Rank"]:
         if column in display_df.columns:
             display_df[column] = display_df[column].map(format_number)
-    return display_df.to_html(index=False, border=0, classes="scan-table")
+    return display_df.to_html(index=False, border=0, classes="scan-table", escape=False)
 
 
 def _svg_line_chart(series: pd.Series, title: str, stroke: str) -> str:
