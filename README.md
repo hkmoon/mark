@@ -39,6 +39,7 @@ This repository includes a scheduled GitHub Actions workflow at
 - It also generates `scan_report.html` for email-friendly delivery.
 - It uploads both files as workflow artifacts.
 - It also writes the markdown report into the GitHub Actions job summary.
+- It deploys the latest HTML report to GitHub Pages.
 
 Manual local equivalent:
 
@@ -51,12 +52,14 @@ python run_cloud_scan.py
 1. Create a GitHub repository for this project.
 2. Push this code to the default branch.
 3. Enable GitHub Actions for the repository.
-4. Optionally use `workflow_dispatch` to test it immediately.
+4. In repository settings, enable GitHub Pages with `GitHub Actions` as the source.
+5. Optionally use `workflow_dispatch` to test it immediately.
 
 ### Receiving the result
 
 - Open the workflow run and read the job summary for a quick report.
 - Download the `daily-market-scan` artifact to get the CSV and markdown report.
+- Open the GitHub Pages site to view the latest public HTML report.
 - The workflow can email the report to `hkmoon@me.com` once SMTP secrets are configured.
 
 ### Email setup

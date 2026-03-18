@@ -10,10 +10,15 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      pages: write
+      id-token: write
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -42,6 +47,19 @@ jobs:
             scan_report.md
             scan_results.csv
           if-no-files-found: warn
+
+      - name: Prepare Pages site
+        shell: bash
+        run: |
+          mkdir -p _site
+          cp scan_report.html _site/index.html
+          cp scan_report.md _site/scan_report.md
+          if [ -f scan_results.csv ]; then cp scan_results.csv _site/scan_results.csv; fi
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
 
       - name: Email scan report
         env:
@@ -119,3 +137,18 @@ jobs:
 
           print("Email sent to hkmoon@me.com")
           PY
+
+  deploy:
+    needs: scan
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
