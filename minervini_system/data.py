@@ -65,23 +65,34 @@ def get_kospi200_tickers() -> list[str]:
 
     pykrx documents `stock.get_index_portfolio_deposit_file("1028")` for KOSPI 200.
     """
-    normalized: list[str] = []
-
-    for offset in range(10):
-        date = (pd.Timestamp.now(tz="Asia/Seoul") - pd.Timedelta(days=offset)).strftime("%Y%m%d")
+    for date in _recent_seoul_business_days():
         try:
             tickers = stock.get_index_portfolio_deposit_file("1028", date=date)
         except Exception:
             continue
 
+        normalized = []
         for ticker in tickers:
             ticker = str(ticker).zfill(6)
             if ticker.isdigit():
                 normalized.append(f"{ticker}.KS")
-        if len(set(normalized)) >= 180:
-            return sorted(set(normalized))
+
+        unique_tickers = sorted(set(normalized))
+        if len(unique_tickers) >= 180:
+            return unique_tickers
 
     return _get_kospi200_tickers_from_investing()
+
+
+def _recent_seoul_business_days(lookback_days: int = 14) -> list[str]:
+    today = pd.Timestamp.now(tz="Asia/Seoul").normalize()
+    dates: list[str] = []
+    for offset in range(lookback_days + 1):
+        candidate = today - pd.Timedelta(days=offset)
+        if candidate.weekday() >= 5:
+            continue
+        dates.append(candidate.strftime("%Y%m%d"))
+    return dates
 
 
 def _get_kospi200_tickers_from_investing() -> list[str]:
