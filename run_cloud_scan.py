@@ -118,13 +118,65 @@ def _html_table(df: pd.DataFrame) -> str:
     return display_df.to_html(index=False, border=0, classes="scan-table")
 
 
+def _svg_line_chart(series: pd.Series, title: str, stroke: str) -> str:
+    clean = series.dropna().tail(90)
+    if clean.empty or len(clean) < 2:
+        return "<p class='empty'>Not enough data for chart.</p>"
+
+    values = clean.astype(float).tolist()
+    width = 720
+    height = 220
+    pad_x = 18
+    pad_y = 20
+    chart_w = width - (pad_x * 2)
+    chart_h = height - (pad_y * 2)
+    min_v = min(values)
+    max_v = max(values)
+    span = max(max_v - min_v, 1e-9)
+
+    points = []
+    for idx, value in enumerate(values):
+        x = pad_x + (chart_w * idx / (len(values) - 1))
+        y = pad_y + chart_h - (((value - min_v) / span) * chart_h)
+        points.append(f"{x:.1f},{y:.1f}")
+
+    first_v = values[0]
+    last_v = values[-1]
+    change_pct = ((last_v / first_v) - 1) * 100 if first_v else 0.0
+    label_color = "#1e7a46" if change_pct >= 0 else "#a33a2b"
+    baseline = pad_y + chart_h
+
+    return f"""
+    <div class="chart-wrap">
+      <div class="chart-header">
+        <div>
+          <p class="chart-title">{title}</p>
+          <p class="chart-subtitle">Last 90 trading sessions</p>
+        </div>
+        <div class="chart-stats">
+          <span class="chart-last">{last_v:,.2f}</span>
+          <span class="chart-change" style="color: {label_color};">{change_pct:+.2f}%</span>
+        </div>
+      </div>
+      <svg viewBox="0 0 {width} {height}" role="img" aria-label="{title} trend chart">
+        <line x1="{pad_x}" y1="{baseline:.1f}" x2="{width - pad_x}" y2="{baseline:.1f}" stroke="#d7e2ee" stroke-width="1" />
+        <line x1="{pad_x}" y1="{pad_y}" x2="{pad_x}" y2="{baseline:.1f}" stroke="#d7e2ee" stroke-width="1" />
+        <polyline fill="none" stroke="{stroke}" stroke-width="3" points="{' '.join(points)}" />
+        <circle cx="{points[-1].split(',')[0]}" cy="{points[-1].split(',')[1]}" r="4" fill="{stroke}" />
+      </svg>
+    </div>
+    """
+
+
 def build_html_report(
     result: pd.DataFrame,
     generated_at_utc: str,
     freshness: dict[str, str],
     skipped_markets: dict[str, str],
+    benchmark_history: dict[str, pd.Series],
 ) -> str:
     sections: list[str] = []
+    chart_colors = {"US": "#0b7285", "KR": "#d9480f"}
 
     for market in MARKETS:
         market_rows = result[result["Market"] == market]
@@ -154,6 +206,11 @@ def build_html_report(
                 ]
             )
         )
+        chart_html = _svg_line_chart(
+            benchmark_history.get(market, pd.Series(dtype=float)),
+            f"{market} benchmark trend",
+            chart_colors.get(market, "#1d6fa5"),
+        )
 
         sections.append(
             f"""
@@ -161,6 +218,8 @@ def build_html_report(
               <h2>{market} Market</h2>
               <p class="meta">Latest market date: <strong>{freshness.get(market, "unknown")}</strong></p>
               {status_html}
+              <h3>Benchmark Trend</h3>
+              {chart_html}
               <h3>Breakout Candidates</h3>
               {breakout_html}
               <h3>VCP Candidates</h3>
@@ -219,6 +278,49 @@ def build_html_report(
         margin: 22px 0 10px 0;
         font-size: 16px;
         color: #1c4f7f;
+      }}
+      .chart-wrap {{
+        background: #f8fbfe;
+        border: 1px solid #e3ebf5;
+        border-radius: 14px;
+        padding: 14px 14px 10px 14px;
+      }}
+      .chart-header {{
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        align-items: flex-start;
+        margin-bottom: 8px;
+      }}
+      .chart-title {{
+        margin: 0;
+        font-size: 14px;
+        font-weight: bold;
+        color: #173a5d;
+      }}
+      .chart-subtitle {{
+        margin: 4px 0 0 0;
+        font-size: 12px;
+        color: #5b7288;
+      }}
+      .chart-stats {{
+        text-align: right;
+      }}
+      .chart-last {{
+        display: block;
+        font-size: 18px;
+        font-weight: bold;
+        color: #173a5d;
+      }}
+      .chart-change {{
+        display: block;
+        margin-top: 4px;
+        font-size: 13px;
+        font-weight: bold;
+      }}
+      svg {{
+        width: 100%;
+        height: auto;
       }}
       .meta {{
         margin: 0 0 8px 0;
@@ -292,6 +394,7 @@ def main() -> None:
     fresh_results = []
     freshness: dict[str, str] = {}
     skipped_markets: dict[str, str] = {}
+    benchmark_history: dict[str, pd.Series] = {}
 
     for market, market_config in MARKETS.items():
         tickers = market_config["tickers"]
@@ -300,6 +403,9 @@ def main() -> None:
         market_today = now_utc.astimezone(market_tz).date()
 
         data_map = download_ohlcv(tickers, start="2023-01-01")
+        benchmark_map = download_ohlcv([benchmark], start="2023-01-01")
+        benchmark_df = benchmark_map[benchmark]
+        benchmark_history[market] = benchmark_df["Close"]
         latest_market_timestamp = max(df.index.max() for df in data_map.values())
         latest_market_date = pd.Timestamp(latest_market_timestamp).date()
         freshness[market] = str(latest_market_date)
@@ -332,6 +438,7 @@ def main() -> None:
         generated_at_utc=now_utc.isoformat(),
         freshness=freshness,
         skipped_markets=skipped_markets,
+        benchmark_history=benchmark_history,
     )
     REPORT_PATH.write_text(report, encoding="utf-8")
     HTML_REPORT_PATH.write_text(html_report, encoding="utf-8")
