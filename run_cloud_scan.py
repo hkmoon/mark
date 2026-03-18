@@ -96,6 +96,22 @@ def format_display_ticker(ticker: str) -> str:
     return f"{DISPLAY_NAMES.get(ticker, ticker)} ({ticker})"
 
 
+def format_number(value: float | int | object) -> str:
+    if pd.isna(value):
+        return ""
+    return f"{float(value):,.2f}"
+
+
+def markdown_table(df: pd.DataFrame) -> str:
+    display_df = df.copy()
+    if "Ticker" in display_df.columns:
+        display_df["Ticker"] = display_df["Ticker"].map(format_display_ticker)
+    for column in ["Close", "RS_Rank", "RS_6M", "ADV50"]:
+        if column in display_df.columns:
+            display_df[column] = display_df[column].map(format_number)
+    return display_df.astype(str).to_markdown(index=False, disable_numparse=True)
+
+
 def build_markdown_report(
     result: pd.DataFrame,
     generated_at_utc: str,
@@ -104,8 +120,6 @@ def build_markdown_report(
     market_regimes: dict[str, dict[str, object]],
 ) -> str:
     working = result.copy()
-    if not working.empty:
-        working["Ticker"] = working["Ticker"].map(format_display_ticker)
     summary_rows = []
     if not working.empty:
         summary_rows = (
@@ -166,11 +180,11 @@ def build_markdown_report(
         if breakout_rows.empty:
             lines.append("No breakout candidates passed today.")
         else:
-            lines.append(
+            lines.append(markdown_table(
                 breakout_rows[
                     ["Ticker", "Close", "RS_Rank", "NearHigh", "QuietBase", "RS_6M"]
-                ].to_markdown(index=False)
-            )
+                ]
+            ))
 
         lines.append("")
         lines.append("### VCP Candidates")
@@ -178,11 +192,11 @@ def build_markdown_report(
         if vcp_rows.empty:
             lines.append("No VCP candidates passed today.")
         else:
-            lines.append(
+            lines.append(markdown_table(
                 vcp_rows[
                     ["Ticker", "Close", "RS_Rank", "NearHigh", "QuietBase", "RS_6M"]
-                ].to_markdown(index=False)
-            )
+                ]
+            ))
 
         lines.append("")
         lines.append("### Watchlist")
@@ -190,11 +204,11 @@ def build_markdown_report(
         if watchlist_rows.empty:
             lines.append("No watchlist names passed today.")
         else:
-            lines.append(
+            lines.append(markdown_table(
                 watchlist_rows[
                     ["Ticker", "Close", "RS_Rank", "NearHigh", "QuietBase", "RS_6M"]
-                ].to_markdown(index=False)
-            )
+                ]
+            ))
 
         lines.append("")
         lines.append("### VCP Near Miss")
@@ -202,11 +216,11 @@ def build_markdown_report(
         if near_miss_rows.empty:
             lines.append("No near-miss names passed today.")
         else:
-            lines.append(
+            lines.append(markdown_table(
                 near_miss_rows[
                     ["Ticker", "Close", "RS_Rank", "TrendTemplate", "NearHigh", "QuietBase"]
-                ].to_markdown(index=False)
-            )
+                ]
+            ))
         lines.append("")
 
     return "\n".join(lines)
@@ -218,9 +232,7 @@ def _html_table(df: pd.DataFrame) -> str:
         display_df["Ticker"] = display_df["Ticker"].map(format_display_ticker)
     for column in ["Close", "RS_6M", "ADV50", "RS_Rank"]:
         if column in display_df.columns:
-            display_df[column] = display_df[column].map(
-                lambda value: f"{value:,.2f}" if pd.notna(value) else ""
-            )
+            display_df[column] = display_df[column].map(format_number)
     return display_df.to_html(index=False, border=0, classes="scan-table")
 
 

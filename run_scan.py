@@ -86,6 +86,12 @@ def format_display_ticker(ticker: str) -> str:
     return f"{DISPLAY_NAMES.get(ticker, ticker)} ({ticker})"
 
 
+def format_number(value: float | int | object) -> str:
+    if pd.isna(value):
+        return ""
+    return f"{float(value):,.2f}"
+
+
 def scan_market(
     market: str,
     tickers: list[str],
@@ -123,6 +129,10 @@ def main() -> None:
     result = pd.concat(results, ignore_index=True) if results else pd.DataFrame()
     if not result.empty:
         result["DisplayTicker"] = result["Ticker"].map(format_display_ticker)
+        display_result = result.copy()
+        for column in ["Close", "RS_Rank"]:
+            if column in display_result.columns:
+                display_result[column] = display_result[column].map(format_number)
         summary = (
             result.groupby("Market")[["BreakoutReady", "VCPCandidate", "Watchlist"]]
             .sum()
@@ -138,7 +148,7 @@ def main() -> None:
         print("=== Scan Summary ===")
         print(summary.to_string(index=False))
         print("")
-        filtered = result[
+        filtered = display_result[
             [
                 "Market",
                 "DisplayTicker",
