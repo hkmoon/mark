@@ -11,6 +11,7 @@ Mark Minervini style scan and single-ticker backtest skeleton.
 - `minervini_system/signals.py`: entry and exit signal frame builder
 - `minervini_system/backtest.py`: single-ticker backtest engine
 - `run_scan.py`: sample scanner entrypoint
+- `run_cloud_scan.py`: multi-market cloud scan entrypoint for GitHub Actions
 - `run_backtest.py`: sample backtest entrypoint
 
 ## Setup
@@ -80,4 +81,5 @@ For example, if you use Gmail SMTP, `EMAIL_FROM` is usually the Gmail address an
 - This is intentionally a simplified SEPA approximation.
 - VCP detection is heuristic, not a full structural pattern recognizer.
 - The backtest currently supports one ticker at a time.
+- The default scan universe includes both U.S. and South Korea tickers.
 - Good next steps are RS percentile ranking, market regime filters, and a multi-ticker portfolio engine.
