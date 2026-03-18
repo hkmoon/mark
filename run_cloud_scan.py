@@ -60,6 +60,41 @@ HTML_REPORT_PATH = Path("scan_report.html")
 CSV_PATH = Path("scan_results.csv")
 HISTORY_PATH = Path("report_history/scan_history.csv")
 
+DISPLAY_NAMES = {
+    "NVDA": "NVIDIA",
+    "MSFT": "Microsoft",
+    "AVGO": "Broadcom",
+    "SMCI": "Super Micro Computer",
+    "PLTR": "Palantir",
+    "CRWD": "CrowdStrike",
+    "ANET": "Arista Networks",
+    "AMD": "AMD",
+    "MU": "Micron",
+    "ARM": "Arm Holdings",
+    "TSM": "TSMC",
+    "ASML": "ASML",
+    "AMAT": "Applied Materials",
+    "LRCX": "Lam Research",
+    "KLAC": "KLA",
+    "MRVL": "Marvell",
+    "QCOM": "Qualcomm",
+    "MCHP": "Microchip",
+    "000660.KS": "SK hynix",
+    "005930.KS": "Samsung Electronics",
+    "042700.KS": "Hanmi Semiconductor",
+    "000990.KS": "DB Hitek",
+    "058470.KQ": "Leeno Industrial",
+    "039030.KQ": "EO Technics",
+    "086520.KQ": "EcoPro",
+    "247540.KQ": "EcoPro BM",
+    "240810.KQ": "Wonik IPS",
+    "078600.KQ": "DMS",
+}
+
+
+def format_display_ticker(ticker: str) -> str:
+    return f"{DISPLAY_NAMES.get(ticker, ticker)} ({ticker})"
+
 
 def build_markdown_report(
     result: pd.DataFrame,
@@ -68,10 +103,13 @@ def build_markdown_report(
     skipped_markets: dict[str, str],
     market_regimes: dict[str, dict[str, object]],
 ) -> str:
+    working = result.copy()
+    if not working.empty:
+        working["Ticker"] = working["Ticker"].map(format_display_ticker)
     summary_rows = []
-    if not result.empty:
+    if not working.empty:
         summary_rows = (
-            result.groupby("Market")[["BreakoutReady", "VCPCandidate", "Watchlist"]]
+            working.groupby("Market")[["BreakoutReady", "VCPCandidate", "Watchlist"]]
             .sum()
             .rename(
                 columns={
@@ -114,7 +152,7 @@ def build_markdown_report(
             lines.append("")
             continue
 
-        market_rows = result[result["Market"] == market]
+        market_rows = working[working["Market"] == market]
         breakout_rows = market_rows[market_rows["BreakoutReady"]].head(10)
         vcp_rows = market_rows[market_rows["VCPCandidate"]].head(10)
         watchlist_rows = market_rows[market_rows["Watchlist"]].head(10)
@@ -176,6 +214,8 @@ def build_markdown_report(
 
 def _html_table(df: pd.DataFrame) -> str:
     display_df = df.copy()
+    if "Ticker" in display_df.columns:
+        display_df["Ticker"] = display_df["Ticker"].map(format_display_ticker)
     for column in ["Close", "RS_6M", "ADV50", "RS_Rank"]:
         if column in display_df.columns:
             display_df[column] = display_df[column].map(
@@ -338,11 +378,12 @@ def build_html_report(
 ) -> str:
     sections: list[str] = []
     chart_colors = {"US": "#0b7285", "KR": "#d9480f"}
-    if result.empty:
+    working = result.copy()
+    if working.empty:
         summary_html = "<p class='empty'>No summary available.</p>"
     else:
         summary_df = (
-            result.groupby("Market")[["BreakoutReady", "VCPCandidate", "Watchlist"]]
+            working.groupby("Market")[["BreakoutReady", "VCPCandidate", "Watchlist"]]
             .sum()
             .rename(
                 columns={
@@ -356,7 +397,7 @@ def build_html_report(
         summary_html = _html_table(summary_df)
 
     for market in MARKETS:
-        market_rows = result[result["Market"] == market]
+        market_rows = working[working["Market"] == market]
         breakout_rows = market_rows[market_rows["BreakoutReady"]].head(10)
         vcp_rows = market_rows[market_rows["VCPCandidate"]].head(10)
         watchlist_rows = market_rows[market_rows["Watchlist"]].head(10)

@@ -50,6 +50,41 @@ MARKETS = {
     },
 }
 
+DISPLAY_NAMES = {
+    "NVDA": "NVIDIA",
+    "MSFT": "Microsoft",
+    "AVGO": "Broadcom",
+    "SMCI": "Super Micro Computer",
+    "PLTR": "Palantir",
+    "CRWD": "CrowdStrike",
+    "ANET": "Arista Networks",
+    "AMD": "AMD",
+    "MU": "Micron",
+    "ARM": "Arm Holdings",
+    "TSM": "TSMC",
+    "ASML": "ASML",
+    "AMAT": "Applied Materials",
+    "LRCX": "Lam Research",
+    "KLAC": "KLA",
+    "MRVL": "Marvell",
+    "QCOM": "Qualcomm",
+    "MCHP": "Microchip",
+    "000660.KS": "SK hynix",
+    "005930.KS": "Samsung Electronics",
+    "042700.KS": "Hanmi Semiconductor",
+    "000990.KS": "DB Hitek",
+    "058470.KQ": "Leeno Industrial",
+    "039030.KQ": "EO Technics",
+    "086520.KQ": "EcoPro",
+    "247540.KQ": "EcoPro BM",
+    "240810.KQ": "Wonik IPS",
+    "078600.KQ": "DMS",
+}
+
+
+def format_display_ticker(ticker: str) -> str:
+    return f"{DISPLAY_NAMES.get(ticker, ticker)} ({ticker})"
+
 
 def scan_market(
     market: str,
@@ -87,6 +122,7 @@ def main() -> None:
 
     result = pd.concat(results, ignore_index=True) if results else pd.DataFrame()
     if not result.empty:
+        result["DisplayTicker"] = result["Ticker"].map(format_display_ticker)
         summary = (
             result.groupby("Market")[["BreakoutReady", "VCPCandidate", "Watchlist"]]
             .sum()
@@ -105,7 +141,7 @@ def main() -> None:
         filtered = result[
             [
                 "Market",
-                "Ticker",
+                "DisplayTicker",
                 "Close",
                 "MarketTrendOK",
                 "TrendTemplate",
