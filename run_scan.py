@@ -92,6 +92,16 @@ def format_number(value: float | int | object) -> str:
     return f"{float(value):,.2f}"
 
 
+def format_close_by_market(row: pd.Series) -> str:
+    if pd.isna(row["Close"]):
+        return ""
+    market = row.get("Market")
+    ticker = str(row.get("Ticker", ""))
+    if market == "KR" or ticker.endswith((".KS", ".KQ")):
+        return f"{float(row['Close']):,.0f}"
+    return f"{float(row['Close']):,.2f}"
+
+
 def scan_market(
     market: str,
     tickers: list[str],
@@ -130,9 +140,9 @@ def main() -> None:
     if not result.empty:
         result["DisplayTicker"] = result["Ticker"].map(format_display_ticker)
         display_result = result.copy()
-        for column in ["Close", "RS_Rank"]:
-            if column in display_result.columns:
-                display_result[column] = display_result[column].map(format_number)
+        display_result["Close"] = display_result.apply(format_close_by_market, axis=1)
+        if "RS_Rank" in display_result.columns:
+            display_result["RS_Rank"] = display_result["RS_Rank"].map(format_number)
         summary = (
             result.groupby("Market")[["BreakoutReady", "VCPCandidate", "Watchlist"]]
             .sum()

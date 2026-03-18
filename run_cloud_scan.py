@@ -102,11 +102,23 @@ def format_number(value: float | int | object) -> str:
     return f"{float(value):,.2f}"
 
 
+def format_close_by_market(row: pd.Series) -> str:
+    if pd.isna(row["Close"]):
+        return ""
+    market = row.get("Market")
+    ticker = str(row.get("Ticker", ""))
+    if market == "KR" or ticker.endswith((".KS", ".KQ")):
+        return f"{float(row['Close']):,.0f}"
+    return f"{float(row['Close']):,.2f}"
+
+
 def markdown_table(df: pd.DataFrame) -> str:
     display_df = df.copy()
+    if "Close" in display_df.columns:
+        display_df["Close"] = display_df.apply(format_close_by_market, axis=1)
     if "Ticker" in display_df.columns:
         display_df["Ticker"] = display_df["Ticker"].map(format_display_ticker)
-    for column in ["Close", "RS_Rank", "RS_6M", "ADV50"]:
+    for column in ["RS_Rank", "RS_6M", "ADV50"]:
         if column in display_df.columns:
             display_df[column] = display_df[column].map(format_number)
     return display_df.astype(str).to_markdown(index=False, disable_numparse=True)
@@ -228,9 +240,11 @@ def build_markdown_report(
 
 def _html_table(df: pd.DataFrame) -> str:
     display_df = df.copy()
+    if "Close" in display_df.columns:
+        display_df["Close"] = display_df.apply(format_close_by_market, axis=1)
     if "Ticker" in display_df.columns:
         display_df["Ticker"] = display_df["Ticker"].map(format_display_ticker)
-    for column in ["Close", "RS_6M", "ADV50", "RS_Rank"]:
+    for column in ["RS_6M", "ADV50", "RS_Rank"]:
         if column in display_df.columns:
             display_df[column] = display_df[column].map(format_number)
     return display_df.to_html(index=False, border=0, classes="scan-table")
