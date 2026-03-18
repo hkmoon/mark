@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import re
+
 import pandas as pd
+import requests
 import yfinance as yf
+from pykrx import stock
 
 
 OHLCV_COLUMNS = ["Open", "High", "Low", "Close", "Volume"]
@@ -53,3 +57,40 @@ def download_ohlcv(
             result[ticker] = df
 
     return result
+
+
+def get_kospi200_tickers() -> list[str]:
+    """
+    Return current KOSPI 200 constituents as Yahoo Finance tickers.
+
+    pykrx documents `stock.get_index_portfolio_deposit_file("1028")` for KOSPI 200.
+    """
+    normalized: list[str] = []
+
+    for offset in range(10):
+        date = (pd.Timestamp.now(tz="Asia/Seoul") - pd.Timedelta(days=offset)).strftime("%Y%m%d")
+        try:
+            tickers = stock.get_index_portfolio_deposit_file("1028", date=date)
+        except Exception:
+            continue
+
+        for ticker in tickers:
+            ticker = str(ticker).zfill(6)
+            if ticker.isdigit():
+                normalized.append(f"{ticker}.KS")
+        if len(set(normalized)) >= 180:
+            return sorted(set(normalized))
+
+    return _get_kospi200_tickers_from_investing()
+
+
+def _get_kospi200_tickers_from_investing() -> list[str]:
+    url = "https://www.investing.com/indices/kospi-200-components"
+    headers = {"User-Agent": "Mozilla/5.0"}
+    response = requests.get(url, headers=headers, timeout=30)
+    response.raise_for_status()
+    symbols = re.findall(r'"symbol":"(\d{6})"', response.text)
+    tickers = sorted({f"{symbol}.KS" for symbol in symbols})
+    if len(tickers) < 180:
+        raise RuntimeError("Could not fetch a reliable KOSPI 200 constituent list.")
+    return tickers
