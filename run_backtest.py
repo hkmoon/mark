@@ -8,7 +8,9 @@ from minervini_system.data import download_ohlcv
 def main() -> None:
     ticker = "NVDA"
     data_map = download_ohlcv([ticker], start="2020-01-01")
-    df = data_map[ticker]
+    df = data_map.get(ticker)
+    if df is None or df.empty:
+        raise RuntimeError(f"No OHLCV data downloaded for {ticker}")
 
     equity_df, trades_df = run_single_ticker_backtest(
         ticker=ticker,
