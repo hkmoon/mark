@@ -113,6 +113,18 @@ def format_ticker_html(ticker: str) -> str:
     return f"<a href=\"{url}\" target=\"_blank\" rel=\"noopener noreferrer\">{label}</a>"
 
 
+def row_highlight_class(row: pd.Series) -> str:
+    if bool(row.get("BreakoutReady", False)) or bool(row.get("Breakout", False)):
+        return "row-breakout"
+    if bool(row.get("Watchlist", False)):
+        return "row-watchlist"
+    if bool(row.get("VCPCandidate", False)):
+        return "row-vcp"
+    if bool(row.get("NearHigh", False)) and bool(row.get("TrendTemplate", False)):
+        return "row-nearmiss"
+    return ""
+
+
 def format_number(value: float | int | object) -> str:
     if pd.isna(value):
         return ""
@@ -255,7 +267,8 @@ def build_markdown_report(
     return "\n".join(lines)
 
 
-def _html_table(df: pd.DataFrame) -> str:
+def _html_table(df: pd.DataFrame, columns: list[str] | None = None) -> str:
+    source_df = df.copy()
     display_df = df.copy()
     if "Close" in display_df.columns:
         display_df["Close"] = display_df.apply(format_close_by_market, axis=1)
@@ -264,7 +277,24 @@ def _html_table(df: pd.DataFrame) -> str:
     for column in ["RS_6M", "ADV50", "RS_Rank"]:
         if column in display_df.columns:
             display_df[column] = display_df[column].map(format_number)
-    return display_df.to_html(index=False, border=0, classes="scan-table", escape=False)
+    visible_columns = columns or list(display_df.columns)
+    header_html = "".join(f"<th>{escape(column)}</th>" for column in visible_columns)
+    rows_html = []
+    for idx, row in display_df.iterrows():
+        row_class = row_highlight_class(source_df.loc[idx])
+        class_attr = f" class=\"{row_class}\"" if row_class else ""
+        cells = []
+        for column in visible_columns:
+            value = row[column]
+            cell_html = value if column == "Ticker" else escape(str(value))
+            cells.append(f"<td>{cell_html}</td>")
+        rows_html.append(f"<tr{class_attr}>{''.join(cells)}</tr>")
+    return (
+        "<table class=\"scan-table\">"
+        f"<thead><tr>{header_html}</tr></thead>"
+        f"<tbody>{''.join(rows_html)}</tbody>"
+        "</table>"
+    )
 
 
 def _svg_line_chart(series: pd.Series, title: str, stroke: str) -> str:
@@ -468,8 +498,21 @@ def build_html_report(
             if breakout_rows.empty
             else _html_table(
                 breakout_rows[
-                    ["Ticker", "Close", "RS_Rank", "NearHigh", "QuietBase", "RS_6M"]
-                ]
+                    [
+                        "Ticker",
+                        "Close",
+                        "RS_Rank",
+                        "NearHigh",
+                        "QuietBase",
+                        "RS_6M",
+                        "BreakoutReady",
+                        "Breakout",
+                        "Watchlist",
+                        "VCPCandidate",
+                        "TrendTemplate",
+                    ]
+                ],
+                columns=["Ticker", "Close", "RS_Rank", "NearHigh", "QuietBase", "RS_6M"],
             )
         )
         vcp_html = (
@@ -477,8 +520,21 @@ def build_html_report(
             if vcp_rows.empty
             else _html_table(
                 vcp_rows[
-                    ["Ticker", "Close", "RS_Rank", "NearHigh", "QuietBase", "RS_6M"]
-                ]
+                    [
+                        "Ticker",
+                        "Close",
+                        "RS_Rank",
+                        "NearHigh",
+                        "QuietBase",
+                        "RS_6M",
+                        "BreakoutReady",
+                        "Breakout",
+                        "Watchlist",
+                        "VCPCandidate",
+                        "TrendTemplate",
+                    ]
+                ],
+                columns=["Ticker", "Close", "RS_Rank", "NearHigh", "QuietBase", "RS_6M"],
             )
         )
         watchlist_html = (
@@ -486,8 +542,21 @@ def build_html_report(
             if watchlist_rows.empty
             else _html_table(
                 watchlist_rows[
-                    ["Ticker", "Close", "RS_Rank", "NearHigh", "QuietBase", "RS_6M"]
-                ]
+                    [
+                        "Ticker",
+                        "Close",
+                        "RS_Rank",
+                        "NearHigh",
+                        "QuietBase",
+                        "RS_6M",
+                        "BreakoutReady",
+                        "Breakout",
+                        "Watchlist",
+                        "VCPCandidate",
+                        "TrendTemplate",
+                    ]
+                ],
+                columns=["Ticker", "Close", "RS_Rank", "NearHigh", "QuietBase", "RS_6M"],
             )
         )
         near_miss_html = (
@@ -495,8 +564,20 @@ def build_html_report(
             if near_miss_rows.empty
             else _html_table(
                 near_miss_rows[
-                    ["Ticker", "Close", "RS_Rank", "TrendTemplate", "NearHigh", "QuietBase"]
-                ]
+                    [
+                        "Ticker",
+                        "Close",
+                        "RS_Rank",
+                        "TrendTemplate",
+                        "NearHigh",
+                        "QuietBase",
+                        "BreakoutReady",
+                        "Breakout",
+                        "Watchlist",
+                        "VCPCandidate",
+                    ]
+                ],
+                columns=["Ticker", "Close", "RS_Rank", "TrendTemplate", "NearHigh", "QuietBase"],
             )
         )
         chart_html = _svg_line_chart(
@@ -698,6 +779,18 @@ def build_html_report(
       }}
       .scan-table tbody tr:nth-child(even) {{
         background: #fbfdff;
+      }}
+      .scan-table tbody tr.row-breakout {{
+        background: #fff3bf;
+      }}
+      .scan-table tbody tr.row-watchlist {{
+        background: #e6fcf5;
+      }}
+      .scan-table tbody tr.row-vcp {{
+        background: #fff4e6;
+      }}
+      .scan-table tbody tr.row-nearmiss {{
+        background: #edf2ff;
       }}
     </style>
   </head>
