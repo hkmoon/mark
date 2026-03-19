@@ -112,8 +112,15 @@ def scan_market(
     data_map = download_ohlcv(tickers, start=start)
     benchmark_map = download_ohlcv([benchmark], start=start)
     regime_map = download_ohlcv([regime_symbol], start=start)
-    benchmark_df = benchmark_map[benchmark]
-    regime_df = regime_map[regime_symbol]
+    benchmark_df = benchmark_map.get(benchmark)
+    regime_df = regime_map.get(regime_symbol)
+
+    if benchmark_df is None or benchmark_df.empty:
+        return pd.DataFrame()
+
+    if regime_df is None or regime_df.empty:
+        regime_df = benchmark_df
+
     result = latest_scan_table(data_map, benchmark_df, regime_df, ScanConfig())
     if result.empty:
         return result

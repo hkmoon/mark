@@ -117,6 +117,16 @@ def run_single_ticker_backtest(
 
 
 def summarize_backtest(equity_df: pd.DataFrame, trades_df: pd.DataFrame) -> dict:
+    if equity_df.empty:
+        return {
+            "TotalReturn": 0.0,
+            "MaxDrawdown": 0.0,
+            "NumTrades": 0,
+            "WinRate": None,
+            "AvgPnL": None,
+            "ProfitFactor": None,
+        }
+
     total_return = equity_df["Equity"].iloc[-1] / equity_df["Equity"].iloc[0] - 1
     rolling_max = equity_df["Equity"].cummax()
     drawdown = equity_df["Equity"] / rolling_max - 1
