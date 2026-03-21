@@ -36,7 +36,7 @@ This repository includes a scheduled GitHub Actions workflow at
 
 - It runs on weekdays at `21:20 UTC`, which is after the U.S. market close year-round.
 - It generates `scan_results.csv` and `scan_report.md`.
-- It also generates `scan_report.html` for email-friendly delivery.
+- It also generates `scan_report.html` for web-friendly delivery.
 - It stores daily market activity history in `report_history/scan_history.csv`.
 - It uploads both files as workflow artifacts.
 - It also writes the markdown report into the GitHub Actions job summary.
@@ -61,25 +61,19 @@ python run_cloud_scan.py
 - Open the workflow run and read the job summary for a quick report.
 - Download the `daily-market-scan` artifact to get the CSV and markdown report.
 - Open the GitHub Pages site to view the latest public HTML report.
-- The workflow can email the report to `hkmoon@me.com` once SMTP secrets are configured.
+- The workflow can send the report to Telegram once bot secrets are configured.
 
-### Email setup
+### Telegram setup
 
 Add these repository secrets in GitHub:
 
-- `SMTP_HOST`
-- `SMTP_PORT`
-- `SMTP_USERNAME`
-- `SMTP_PASSWORD`
-- `EMAIL_FROM`
+- `TELEGRAM_BOT_TOKEN`
+- `TELEGRAM_CHAT_ID`
 
-After those are set, each scheduled run will email:
+After those are set, each scheduled run will send a Telegram message with the latest report text:
 
-- message body: `scan_report.html` with a plain-text fallback
-- attachments: `scan_report.html`, `scan_report.md`, `scan_results.csv`
-- recipient: `hkmoon@me.com`
-
-For example, if you use Gmail SMTP, `EMAIL_FROM` is usually the Gmail address and `SMTP_PASSWORD` is an app password.
+- message body: `scan_report.md` content (truncated to fit Telegram limits if needed)
+- recipient: the configured Telegram chat ID
 
 ## Notes
 
