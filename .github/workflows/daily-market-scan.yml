@@ -94,9 +94,14 @@ jobs:
           report_path = Path("scan_report.md")
           report_text = report_path.read_text(encoding="utf-8") if report_path.exists() else "No report generated."
           max_chars = 3500
-          message = report_text[:max_chars]
+          suffix = "\n\n(Report truncated to fit Telegram message limits.)"
           if len(report_text) > max_chars:
-              message += "\n\n(Report truncated to fit Telegram message limits.)"
+              allowed_main = max_chars - len(suffix)
+              if allowed_main < 0:
+                  allowed_main = 0
+              message = report_text[:allowed_main] + suffix
+          else:
+              message = report_text[:max_chars]
 
           token = os.environ["TELEGRAM_BOT_TOKEN"]
           chat_id = os.environ["TELEGRAM_CHAT_ID"]
