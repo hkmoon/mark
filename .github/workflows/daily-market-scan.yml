@@ -74,81 +74,44 @@ jobs:
           git commit -m "Update scan history"
           git push
 
-      - name: Email scan report
+      - name: Send Telegram scan report
         env:
-          SMTP_HOST: ${{ secrets.SMTP_HOST }}
-          SMTP_PORT: ${{ secrets.SMTP_PORT }}
-          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
-          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
-          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
-          EMAIL_TO: hkmoon@me.com
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           python - <<'PY'
           import os
-          import smtplib
-          from email.message import EmailMessage
           from pathlib import Path
+          from urllib.parse import urlencode
+          from urllib.request import Request, urlopen
 
-          required = ["SMTP_HOST", "SMTP_PORT", "SMTP_USERNAME", "SMTP_PASSWORD", "EMAIL_FROM"]
+          required = ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"]
           missing = [name for name in required if not os.environ.get(name)]
           if missing:
-              print(f"Skipping email delivery. Missing secrets: {', '.join(missing)}")
+              print(f"Skipping Telegram delivery. Missing secrets: {', '.join(missing)}")
               raise SystemExit(0)
 
           report_path = Path("scan_report.md")
-          html_report_path = Path("scan_report.html")
-          csv_path = Path("scan_results.csv")
           report_text = report_path.read_text(encoding="utf-8") if report_path.exists() else "No report generated."
-          html_report = html_report_path.read_text(encoding="utf-8") if html_report_path.exists() else None
+          max_chars = 3500
+          message = report_text[:max_chars]
+          if len(report_text) > max_chars:
+              message += "\n\n(Report truncated to fit Telegram message limits.)"
 
-          msg = EmailMessage()
-          msg["Subject"] = "Daily Market Scan"
-          msg["From"] = os.environ["EMAIL_FROM"]
-          msg["To"] = os.environ["EMAIL_TO"]
-          msg.set_content(report_text)
-          if html_report:
-              msg.add_alternative(html_report, subtype="html")
-
-          if report_path.exists():
-              msg.add_attachment(
-                  report_path.read_bytes(),
-                  maintype="text",
-                  subtype="markdown",
-                  filename=report_path.name,
-              )
-
-          if html_report_path.exists():
-              msg.add_attachment(
-                  html_report_path.read_bytes(),
-                  maintype="text",
-                  subtype="html",
-                  filename=html_report_path.name,
-              )
-
-          if csv_path.exists():
-              msg.add_attachment(
-                  csv_path.read_bytes(),
-                  maintype="text",
-                  subtype="csv",
-                  filename=csv_path.name,
-              )
-
-          host = os.environ["SMTP_HOST"]
-          port = int(os.environ["SMTP_PORT"])
-          username = os.environ["SMTP_USERNAME"]
-          password = os.environ["SMTP_PASSWORD"]
-
-          if port == 465:
-              with smtplib.SMTP_SSL(host, port) as server:
-                  server.login(username, password)
-                  server.send_message(msg)
-          else:
-              with smtplib.SMTP(host, port) as server:
-                  server.starttls()
-                  server.login(username, password)
-                  server.send_message(msg)
-
-          print("Email sent to hkmoon@me.com")
+          token = os.environ["TELEGRAM_BOT_TOKEN"]
+          chat_id = os.environ["TELEGRAM_CHAT_ID"]
+          api_url = f"https://api.telegram.org/bot{token}/sendMessage"
+          payload = urlencode(
+              {
+                  "chat_id": chat_id,
+                  "text": message,
+                  "disable_web_page_preview": "true",
+              }
+          ).encode("utf-8")
+          req = Request(api_url, data=payload, method="POST")
+          with urlopen(req, timeout=30) as response:
+              body = response.read().decode("utf-8")
+          print(f"Telegram message sent: {body}")
           PY
 
   deploy:
