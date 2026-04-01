@@ -9,6 +9,7 @@ Date,Market,BreakoutCount,VCPCount,TrendTemplateCount,TopRSTicker
 2026-03-27,KR,0,0,9,042700.KS
 2026-03-30,KR,0,1,7,086520.KQ
 2026-03-31,KR,0,1,3,086520.KQ
+2026-04-01,KR,0,1,7,086520.KQ
 2026-03-18,US,0,0,3,MU
 2026-03-19,US,0,1,4,MU
 2026-03-20,US,0,0,4,MU
@@ -19,3 +20,4 @@ Date,Market,BreakoutCount,VCPCount,TrendTemplateCount,TopRSTicker
 2026-03-27,US,0,0,1,MU
 2026-03-30,US,0,0,1,MU
 2026-03-31,US,0,0,1,MU
+2026-04-01,US,1,0,3,MU
