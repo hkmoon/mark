@@ -470,14 +470,18 @@ def build_html_report(
         summary_html = _html_table(summary_df)
 
     for market in MARKETS:
-        market_rows = working[working["Market"] == market]
-        breakout_rows = market_rows[market_rows["BreakoutReady"]].head(10)
-        vcp_rows = market_rows[market_rows["VCPCandidate"]].head(10)
-        watchlist_rows = market_rows[market_rows["Watchlist"]].head(10)
-        near_miss_rows = market_rows[
-            (market_rows["NearHigh"])
-            & (~market_rows["VCPCandidate"])
-        ].sort_values(["RS_Rank", "TrendTemplate"], ascending=[False, False]).head(10)
+        if working.empty or "Market" not in working.columns:
+            market_rows = working
+            breakout_rows = vcp_rows = watchlist_rows = near_miss_rows = working
+        else:
+            market_rows = working[working["Market"] == market]
+            breakout_rows = market_rows[market_rows["BreakoutReady"]].head(10)
+            vcp_rows = market_rows[market_rows["VCPCandidate"]].head(10)
+            watchlist_rows = market_rows[market_rows["Watchlist"]].head(10)
+            near_miss_rows = market_rows[
+                (market_rows["NearHigh"])
+                & (~market_rows["VCPCandidate"])
+            ].sort_values(["RS_Rank", "TrendTemplate"], ascending=[False, False]).head(10)
         status_html = ""
         if market in skipped_markets:
             status_html = (
@@ -585,7 +589,10 @@ def build_html_report(
             f"{market} benchmark trend",
             chart_colors.get(market, "#1d6fa5"),
         )
-        market_history = metric_history[metric_history["Market"] == market].copy()
+        if metric_history.empty or "Market" not in metric_history.columns:
+            market_history = metric_history
+        else:
+            market_history = metric_history[metric_history["Market"] == market].copy()
         activity_chart = _svg_multi_line_chart(
             market_history,
             f"{market} setup activity",
