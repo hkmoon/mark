@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from html import escape
 from pathlib import Path
@@ -297,8 +298,430 @@ def _html_table(df: pd.DataFrame, columns: list[str] | None = None) -> str:
     )
 
 
+def _json_for_script(payload: object) -> str:
+    """Serialize for a <script type="application/json"> block without </script> breakouts."""
+    return (
+        json.dumps(payload, separators=(",", ":"))
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+        .replace("&", "\\u0026")
+    )
+
+
+CHART_JS = r"""
+(function () {
+  "use strict";
+  var SVG_NS = "http://www.w3.org/2000/svg";
+  var FONT = 11;
+  var CHAR_W = 6.6;
+  var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+  function svgEl(tag, attrs) {
+    var node = document.createElementNS(SVG_NS, tag);
+    for (var key in attrs) { node.setAttribute(key, attrs[key]); }
+    return node;
+  }
+  function htmlEl(tag, cls, text) {
+    var node = document.createElement(tag);
+    if (cls) { node.className = cls; }
+    if (text !== undefined) { node.textContent = text; }
+    return node;
+  }
+  function fmtNum(v, digits) {
+    return v.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+  }
+  function fmtPct(v) { return (v >= 0 ? "+" : "") + v.toFixed(2) + "%"; }
+  function pctColor(v) { return v >= 0 ? "#1e7a46" : "#a33a2b"; }
+  function tipRow(tip, label, value, color, dotColor) {
+    var row = htmlEl("div", "chart-tip-row");
+    var name = htmlEl("span", "chart-tip-label");
+    if (dotColor) {
+      var dot = htmlEl("span", "legend-dot");
+      dot.style.background = dotColor;
+      name.appendChild(dot);
+    }
+    name.appendChild(document.createTextNode(label));
+    var val = htmlEl("span", "chart-tip-value", value);
+    if (color) { val.style.color = color; }
+    row.appendChild(name);
+    row.appendChild(val);
+    tip.appendChild(row);
+  }
+
+  /* ---- layout helpers (all in real CSS pixels: viewBox matches rendered width) ---- */
+  function measure(svg) {
+    var w = svg.getBoundingClientRect().width;
+    return w > 0 ? Math.round(w) : 720;
+  }
+  function watchWidth(svg, redraw) {
+    var last = measure(svg);
+    function check() {
+      var w = measure(svg);
+      if (w !== last) { last = w; redraw(); }
+    }
+    if (window.ResizeObserver) { new ResizeObserver(check).observe(svg); }
+    else { window.addEventListener("resize", check); }
+  }
+  function swapBase(svg, st, g) {
+    if (st.base) { svg.replaceChild(g, st.base); }
+    else {
+      while (svg.firstChild) { svg.removeChild(svg.firstChild); }
+      svg.appendChild(g);
+    }
+    st.base = g;
+  }
+
+  function yTicks(min, max, target, integer) {
+    var raw = (max - min) / target;
+    if (!(raw > 0)) { raw = 1; }
+    var pow = Math.pow(10, Math.floor(Math.log10(raw)));
+    var f = raw / pow;
+    var step = (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * pow;
+    if (integer) { step = Math.max(1, Math.round(step)); }
+    var decimals = step >= 1 ? 0 : Math.min(6, Math.ceil(-Math.log10(step) - 1e-9));
+    var ticks = [];
+    for (var k = Math.ceil(min / step - 1e-9); k * step <= max + 1e-9; k++) {
+      ticks.push(+(k * step).toFixed(10));
+    }
+    return { ticks: ticks, decimals: decimals };
+  }
+
+  function parts(s) { return [+s.slice(0, 4), +s.slice(5, 7), +s.slice(8, 10)]; }
+  function labelW(s) { return s.length * CHAR_W; }
+
+  /* returns [{i, label}] over indexes 0..m-1; xOf(i) gives pixel x */
+  function xTicks(dates, xOf, W, innerW) {
+    var m = dates.length;
+    if (m < 2 || !dates[0] || !dates[m - 1]) { return []; }
+    var p0 = parts(dates[0]), p1 = parts(dates[m - 1]);
+    var days = (Date.UTC(p1[0], p1[1] - 1, p1[2]) - Date.UTC(p0[0], p0[1] - 1, p0[2])) / 86400000;
+    var crosses = p0[0] !== p1[0];
+    var steps = [1, 3, 6, 12];
+    var start = days <= 200 ? 0 : days <= 800 ? 1 : days <= 1600 ? 2 : 3;
+    var out = null, t, i;
+    for (t = start; t < steps.length && !out; t++) {
+      var step = steps[t], kept = [], lastX = -1e9;
+      for (i = 1; i < m; i++) {
+        var a = parts(dates[i - 1]), b = parts(dates[i]);
+        if ((b[0] !== a[0] || b[1] !== a[1]) && (b[1] - 1) % step === 0) {
+          var x = xOf(i);
+          if (x - lastX >= 70) { kept.push(i); lastX = x; }
+        }
+      }
+      if (kept.length >= 2) {
+        var prevYear = null;
+        out = kept.map(function (idx) {
+          var b = parts(dates[idx]), label;
+          if (step === 12) { label = String(b[0]); }
+          else if (step === 1) {
+            label = MONTHS[b[1] - 1] + (prevYear === null || prevYear !== b[0] ? " '" + String(b[0]).slice(2) : "");
+          } else { label = MONTHS[b[1] - 1] + " '" + String(b[0]).slice(2); }
+          prevYear = b[0];
+          return { i: idx, label: label };
+        });
+      }
+    }
+    if (!out) {
+      var k = Math.max(2, Math.min(5, Math.floor(innerW / 90)));
+      out = [];
+      for (var j = 0; j < k; j++) {
+        var idx2 = Math.round((j * (m - 1)) / (k - 1));
+        var q = parts(dates[idx2]);
+        out.push({ i: idx2, label: MONTHS[q[1] - 1] + " " + q[2] + (crosses ? " '" + String(q[0]).slice(2) : "") });
+      }
+    }
+    /* clamp into the svg and drop any label that would touch its neighbour */
+    var res = [], edge = -1e9;
+    out.forEach(function (tk) {
+      var w = labelW(tk.label);
+      var x = Math.max(w / 2 + 2, Math.min(xOf(tk.i), W - w / 2 - 2));
+      if (x - w / 2 >= edge + 8) {
+        res.push({ i: tk.i, label: tk.label, tx: x });
+        edge = x + w / 2;
+      }
+    });
+    return res;
+  }
+
+  function drawFrame(g, geo, yt, yLabels, xt, yOf, xOf) {
+    var gridColor = "#e3ebf5", textColor = "#5b7288";
+    var right = geo.W - geo.padR, bottom = geo.H - geo.padB;
+    xt.forEach(function (tk) {
+      var x = xOf(tk.i).toFixed(1);
+      g.appendChild(svgEl("line", { x1: x, y1: geo.padT, x2: x, y2: bottom, stroke: gridColor, "stroke-width": "1" }));
+    });
+    yt.ticks.forEach(function (v, n) {
+      var y = yOf(v);
+      g.appendChild(svgEl("line", { x1: geo.padL, y1: y.toFixed(1), x2: right, y2: y.toFixed(1), stroke: gridColor, "stroke-width": "1" }));
+      var t = svgEl("text", { x: geo.padL - 6, y: (y + FONT * 0.35).toFixed(1), "text-anchor": "end", "font-size": FONT, fill: textColor });
+      t.textContent = yLabels[n];
+      g.appendChild(t);
+    });
+    g.appendChild(svgEl("line", { x1: geo.padL, y1: bottom, x2: right, y2: bottom, stroke: "#d7e2ee", "stroke-width": "1" }));
+    g.appendChild(svgEl("line", { x1: geo.padL, y1: geo.padT, x2: geo.padL, y2: bottom, stroke: "#d7e2ee", "stroke-width": "1" }));
+    xt.forEach(function (tk) {
+      var t = svgEl("text", { x: tk.tx.toFixed(1), y: bottom + FONT + 6, "text-anchor": "middle", "font-size": FONT, fill: textColor });
+      t.textContent = tk.label;
+      g.appendChild(t);
+    });
+  }
+
+  function makeGeo(W, H, yLabels) {
+    var maxLen = 0;
+    yLabels.forEach(function (s) { if (s.length > maxLen) { maxLen = s.length; } });
+    return { W: W, H: H, padL: Math.max(34, Math.ceil(maxLen * CHAR_W) + 14), padR: 14, padT: 12, padB: 28 };
+  }
+
+  /* cfg: geom() -> {width, top, bottom, padX, innerW}; count(); x(i); markers(i) -> [{y, color}]; fill(tip, i) */
+  function attachHover(wrap, svg, cfg) {
+    var layer = svgEl("g", { "pointer-events": "none", display: "none" });
+    var guide = svgEl("line", { stroke: "#8aa3bb", "stroke-width": "1", "stroke-dasharray": "3 3" });
+    var dots = [];
+    var tip = htmlEl("div", "chart-tip");
+    tip.style.display = "none";
+    layer.appendChild(guide);
+    svg.appendChild(layer);
+    wrap.appendChild(tip);
+
+    function hide() {
+      layer.setAttribute("display", "none");
+      tip.style.display = "none";
+    }
+
+    function show(i) {
+      var geo = cfg.geom();
+      var x = cfg.x(i);
+      var pts = cfg.markers(i);
+      guide.setAttribute("x1", x);
+      guide.setAttribute("x2", x);
+      guide.setAttribute("y1", geo.top);
+      guide.setAttribute("y2", geo.bottom);
+      while (dots.length < pts.length) {
+        var c = svgEl("circle", { r: "4.5", stroke: "#ffffff", "stroke-width": "2" });
+        layer.appendChild(c);
+        dots.push(c);
+      }
+      for (var j = 0; j < dots.length; j++) {
+        if (j < pts.length) {
+          dots[j].setAttribute("cx", x);
+          dots[j].setAttribute("cy", pts[j].y);
+          dots[j].setAttribute("fill", pts[j].color);
+          dots[j].setAttribute("display", "inline");
+        } else {
+          dots[j].setAttribute("display", "none");
+        }
+      }
+      layer.setAttribute("display", "inline");
+
+      tip.textContent = "";
+      cfg.fill(tip, i);
+      tip.style.display = "block";
+
+      var wr = wrap.getBoundingClientRect();
+      var sr = svg.getBoundingClientRect();
+      var avail = wrap.clientWidth;
+      var px = sr.left - (wr.left + wrap.clientLeft) + (x * sr.width) / geo.width;
+      var top = sr.top - (wr.top + wrap.clientTop) + 6;
+      var tw = tip.offsetWidth;
+      var left = px + 14;
+      if (left + tw > avail - 4) { left = px - 14 - tw; }
+      left = Math.max(4, Math.min(left, avail - tw - 4));
+      tip.style.left = left + "px";
+      tip.style.top = top + "px";
+    }
+
+    function onPointer(e) {
+      var sr = svg.getBoundingClientRect();
+      var n = cfg.count();
+      var geo = cfg.geom();
+      if (!sr.width || n < 1) { return; }
+      var vx = ((e.clientX - sr.left) * geo.width) / sr.width;
+      var i = Math.round(((vx - geo.padX) / geo.innerW) * (n - 1));
+      show(Math.max(0, Math.min(n - 1, i)));
+    }
+
+    svg.addEventListener("pointerdown", onPointer);
+    svg.addEventListener("pointermove", onPointer);
+    svg.addEventListener("pointerleave", function (e) {
+      if (e.pointerType !== "touch") { hide(); }
+    });
+    svg.addEventListener("pointercancel", hide);
+    document.addEventListener("pointerdown", function (e) {
+      if (!svg.contains(e.target)) { hide(); }
+    });
+    return { hide: hide };
+  }
+
+  function initBenchmark(wrap, data) {
+    var svg = wrap.querySelector("svg");
+    var subEl = wrap.querySelector(".chart-subtitle");
+    var lastEl = wrap.querySelector(".chart-last");
+    var chgEl = wrap.querySelector(".chart-change");
+    var stats = wrap.querySelector(".chart-stats");
+    var dates = data.dates, vals = data.values, n = vals.length;
+    var defaultSub = subEl.textContent;
+    var st = { base: null, start: Math.max(0, n - 90), geo: null, xs: [], ys: [] };
+    var hover;
+
+    function render() {
+      var W = measure(svg);
+      var H = Math.max(180, Math.round((W * 220) / 720));
+      var start = st.start, m = n - start, min = Infinity, max = -Infinity, i;
+      for (i = start; i < n; i++) {
+        if (vals[i] < min) { min = vals[i]; }
+        if (vals[i] > max) { max = vals[i]; }
+      }
+      var span = Math.max(max - min, 1e-9);
+      var yt = yTicks(min, max, Math.max(3, Math.min(5, Math.round((H - 40) / 45))), false);
+      var yLabels = yt.ticks.map(function (v) { return fmtNum(v, yt.decimals); });
+      var geo = makeGeo(W, H, yLabels);
+      var cw = W - geo.padL - geo.padR, ch = H - geo.padT - geo.padB;
+      function xOf(k) { return geo.padL + (cw * k) / (m - 1); }
+      function yOf(v) { return geo.padT + ch - ((v - min) / span) * ch; }
+      var xt = xTicks(dates.slice(start), xOf, W, cw);
+
+      var g = svgEl("g", {});
+      drawFrame(g, geo, yt, yLabels, xt, yOf, xOf);
+      var xs = [], ys = [], pts = [];
+      for (i = 0; i < m; i++) {
+        xs.push(xOf(i)); ys.push(yOf(vals[start + i]));
+        pts.push(xs[i].toFixed(1) + "," + ys[i].toFixed(1));
+      }
+      g.appendChild(svgEl("polyline", { fill: "none", stroke: data.stroke, "stroke-width": "2.5", "stroke-linejoin": "round", points: pts.join(" ") }));
+      g.appendChild(svgEl("circle", { cx: xs[m - 1].toFixed(1), cy: ys[m - 1].toFixed(1), r: "4", fill: data.stroke }));
+      svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+      swapBase(svg, st, g);
+      st.geo = { width: W, top: geo.padT, bottom: H - geo.padB, padX: geo.padL, innerW: cw };
+      st.xs = xs; st.ys = ys;
+
+      var first = vals[start], last = vals[n - 1];
+      var chg = first ? (last / first - 1) * 100 : 0;
+      lastEl.textContent = fmtNum(last, 2);
+      chgEl.textContent = fmtPct(chg);
+      chgEl.style.color = pctColor(chg);
+      subEl.textContent = start === 0 && n > 90
+        ? "Full history, " + dates[0] + " to " + dates[n - 1] + ", " + n + " sessions"
+        : defaultSub;
+    }
+    render();
+
+    hover = attachHover(wrap, svg, {
+      geom: function () { return st.geo; },
+      count: function () { return n - st.start; },
+      x: function (i) { return st.xs[i]; },
+      markers: function (i) { return [{ y: st.ys[i], color: data.stroke }]; },
+      fill: function (tip, i) {
+        var k = st.start + i;
+        tip.appendChild(htmlEl("div", "chart-tip-date", dates[k]));
+        tipRow(tip, "Close", fmtNum(vals[k], 2));
+        if (k > 0 && vals[k - 1]) {
+          var d = (vals[k] / vals[k - 1] - 1) * 100;
+          tipRow(tip, "vs prev session", fmtPct(d), pctColor(d));
+        }
+        if (vals[st.start]) {
+          var r = (vals[k] / vals[st.start] - 1) * 100;
+          tipRow(tip, "vs range start", fmtPct(r), pctColor(r));
+        }
+      }
+    });
+    watchWidth(svg, function () { render(); hover.hide(); });
+
+    if (n > 90 && stats) {
+      var group = htmlEl("div", "chart-toggle");
+      group.setAttribute("role", "group");
+      group.setAttribute("aria-label", "Chart range");
+      var buttons = [["90 sessions", false], ["Full", true]].map(function (opt) {
+        var b = htmlEl("button", "", opt[0]);
+        b.type = "button";
+        b.addEventListener("click", function () {
+          st.start = opt[1] ? 0 : Math.max(0, n - 90);
+          sync();
+          render();
+          hover.hide();
+        });
+        group.appendChild(b);
+        return { el: b, full: opt[1] };
+      });
+      var sync = function () {
+        buttons.forEach(function (b) {
+          b.el.setAttribute("aria-pressed", String((st.start === 0) === b.full));
+        });
+      };
+      sync();
+      stats.appendChild(group);
+    }
+  }
+
+  function initActivity(wrap, data) {
+    var svg = wrap.querySelector("svg");
+    var dates = data.dates, series = data.series, n = dates.length;
+    var min = Infinity, max = -Infinity;
+    series.forEach(function (s) {
+      s.values.forEach(function (v) {
+        if (v < min) { min = v; }
+        if (v > max) { max = v; }
+      });
+    });
+    var span = Math.max(max - min, 1);
+    var st = { base: null, geo: null, xOf: null, yOf: null };
+
+    function render() {
+      var W = measure(svg);
+      var H = Math.max(180, Math.round((W * 240) / 720));
+      var yt = yTicks(min, min + span, Math.max(3, Math.min(5, Math.round((H - 40) / 45))), true);
+      var yLabels = yt.ticks.map(function (v) { return fmtNum(v, 0); });
+      var geo = makeGeo(W, H, yLabels);
+      var cw = W - geo.padL - geo.padR, ch = H - geo.padT - geo.padB;
+      function xOf(k) { return geo.padL + (cw * k) / (n - 1); }
+      function yOf(v) { return geo.padT + ch - ((v - min) / span) * ch; }
+      var g = svgEl("g", {});
+      drawFrame(g, geo, yt, yLabels, xTicks(dates, xOf, W, cw), yOf, xOf);
+      series.forEach(function (s) {
+        var pts = s.values.map(function (v, k) { return xOf(k).toFixed(1) + "," + yOf(v).toFixed(1); });
+        g.appendChild(svgEl("polyline", { fill: "none", stroke: s.color, "stroke-width": "2.5", "stroke-linejoin": "round", points: pts.join(" ") }));
+      });
+      svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+      swapBase(svg, st, g);
+      st.geo = { width: W, top: geo.padT, bottom: H - geo.padB, padX: geo.padL, innerW: cw };
+      st.xOf = xOf; st.yOf = yOf;
+    }
+    render();
+
+    var hover = attachHover(wrap, svg, {
+      geom: function () { return st.geo; },
+      count: function () { return n; },
+      x: function (i) { return st.xOf(i); },
+      markers: function (i) {
+        return series.map(function (s) { return { y: st.yOf(s.values[i]), color: s.color }; });
+      },
+      fill: function (tip, i) {
+        if (dates[i]) { tip.appendChild(htmlEl("div", "chart-tip-date", dates[i])); }
+        series.forEach(function (s) {
+          tipRow(tip, s.label, String(Math.round(s.values[i])), null, s.color);
+        });
+      }
+    });
+    watchWidth(svg, function () { render(); hover.hide(); });
+  }
+
+  var wraps = document.querySelectorAll(".chart-wrap[data-chart]");
+  Array.prototype.forEach.call(wraps, function (wrap) {
+    try {
+      var holder = wrap.querySelector("script.chart-data");
+      var data = JSON.parse(holder.textContent);
+      if (wrap.getAttribute("data-chart") === "benchmark") { initBenchmark(wrap, data); }
+      else { initActivity(wrap, data); }
+    } catch (err) {
+      if (window.console) { console.error("chart init failed", err); }
+    }
+  });
+})();
+"""
+
+
 def _svg_line_chart(series: pd.Series, title: str, stroke: str) -> str:
-    clean = series.dropna().tail(90)
+    full = series.dropna()
+    clean = full.tail(90)
     if clean.empty or len(clean) < 2:
         return "<p class='empty'>Not enough data for chart.</p>"
 
@@ -324,9 +747,16 @@ def _svg_line_chart(series: pd.Series, title: str, stroke: str) -> str:
     change_pct = ((last_v / first_v) - 1) * 100 if first_v else 0.0
     label_color = "#1e7a46" if change_pct >= 0 else "#a33a2b"
     baseline = pad_y + chart_h
+    chart_data = _json_for_script(
+        {
+            "stroke": stroke,
+            "dates": pd.to_datetime(full.index).strftime("%Y-%m-%d").tolist(),
+            "values": [round(float(v), 4) for v in full.tolist()],
+        }
+    )
 
     return f"""
-    <div class="chart-wrap">
+    <div class="chart-wrap" data-chart="benchmark">
       <div class="chart-header">
         <div>
           <p class="chart-title">{title}</p>
@@ -343,6 +773,7 @@ def _svg_line_chart(series: pd.Series, title: str, stroke: str) -> str:
         <polyline fill="none" stroke="{stroke}" stroke-width="3" points="{' '.join(points)}" />
         <circle cx="{points[-1].split(',')[0]}" cy="{points[-1].split(',')[1]}" r="4" fill="{stroke}" />
       </svg>
+      <script type="application/json" class="chart-data">{chart_data}</script>
     </div>
     """
 
@@ -376,12 +807,21 @@ def _svg_multi_line_chart(
     span = max(max_v - min_v, 1.0)
     baseline = pad_y + chart_h
 
+    if "Date" in chart_df.columns:
+        date_labels = (
+            pd.to_datetime(chart_df["Date"], errors="coerce").dt.strftime("%Y-%m-%d").fillna("").tolist()
+        )
+    else:
+        date_labels = [""] * len(chart_df)
+    data_series = []
+
     polylines = []
     legend_items = []
     for column, label, color in series_config:
         if column not in chart_df.columns:
             continue
         values = chart_df[column].fillna(0).astype(float).tolist()
+        data_series.append({"label": label, "color": color, "values": values})
         points = []
         for idx, value in enumerate(values):
             x = pad_x + (chart_w * idx / (len(values) - 1))
@@ -394,8 +834,10 @@ def _svg_multi_line_chart(
             f"<span class='legend-item'><span class='legend-dot' style='background:{color};'></span>{label}</span>"
         )
 
+    chart_data = _json_for_script({"dates": date_labels, "series": data_series})
+
     return f"""
-    <div class="chart-wrap">
+    <div class="chart-wrap" data-chart="activity">
       <div class="chart-header">
         <div>
           <p class="chart-title">{title}</p>
@@ -408,6 +850,7 @@ def _svg_multi_line_chart(
         <line x1="{pad_x}" y1="{pad_y}" x2="{pad_x}" y2="{baseline:.1f}" stroke="#d7e2ee" stroke-width="1" />
         {''.join(polylines)}
       </svg>
+      <script type="application/json" class="chart-data">{chart_data}</script>
     </div>
     """
 
@@ -682,6 +1125,69 @@ def build_html_report(
         border: 1px solid #e3ebf5;
         border-radius: 14px;
         padding: 14px 14px 10px 14px;
+        position: relative;
+      }}
+      .chart-wrap svg {{
+        cursor: crosshair;
+        touch-action: pan-y;
+      }}
+      .chart-toggle {{
+        display: inline-flex;
+        margin-top: 8px;
+        border: 1px solid #e3ebf5;
+        border-radius: 8px;
+        overflow: hidden;
+        background: #ffffff;
+      }}
+      .chart-toggle button {{
+        border: 0;
+        background: #ffffff;
+        color: #1c4f7f;
+        font: inherit;
+        font-size: 12px;
+        padding: 4px 10px;
+        cursor: pointer;
+      }}
+      .chart-toggle button + button {{
+        border-left: 1px solid #e3ebf5;
+      }}
+      .chart-toggle button[aria-pressed="true"] {{
+        background: #0f3d66;
+        color: #ffffff;
+      }}
+      .chart-tip {{
+        position: absolute;
+        z-index: 2;
+        pointer-events: none;
+        min-width: 130px;
+        max-width: calc(100% - 8px);
+        box-sizing: border-box;
+        padding: 8px 10px;
+        background: #ffffff;
+        border: 1px solid #e3ebf5;
+        border-radius: 10px;
+        box-shadow: 0 6px 16px rgba(16, 35, 58, 0.16);
+        font-size: 12px;
+        color: #173a5d;
+      }}
+      .chart-tip-date {{
+        font-weight: bold;
+        margin-bottom: 4px;
+      }}
+      .chart-tip-row {{
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        margin-top: 2px;
+      }}
+      .chart-tip-label {{
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        color: #4a6178;
+      }}
+      .chart-tip-value {{
+        font-weight: bold;
       }}
       .chart-header {{
         display: flex;
@@ -814,6 +1320,7 @@ def build_html_report(
       </section>
       {"".join(sections)}
     </div>
+    <script>{CHART_JS}</script>
   </body>
 </html>
 """
