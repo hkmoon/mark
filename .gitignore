@@ -4,5 +4,6 @@ __pycache__/
 scan_results.csv
 scan_report.md
 scan_report.html
+scan_report_telegram.json
 *_equity.csv
 *_trades.csv

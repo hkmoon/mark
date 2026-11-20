@@ -60,6 +60,7 @@ MARKETS = {
 }
 REPORT_PATH = Path("scan_report.md")
 HTML_REPORT_PATH = Path("scan_report.html")
+TELEGRAM_PAYLOAD_PATH = Path("scan_report_telegram.json")
 CSV_PATH = Path("scan_results.csv")
 HISTORY_PATH = Path("report_history/scan_history.csv")
 
@@ -266,6 +267,171 @@ def build_markdown_report(
         lines.append("")
 
     return "\n".join(lines)
+
+
+def _rich_cell(text: str, *, header: bool = False, align: str = "left") -> dict[str, object]:
+    cell: dict[str, object] = {"text": text or "-", "align": align, "valign": "middle"}
+    if header:
+        cell["is_header"] = True
+    return cell
+
+
+def _rich_table_block(df: pd.DataFrame) -> dict[str, object]:
+    display_df = df.copy()
+    if "Close" in display_df.columns:
+        display_df["Close"] = display_df.apply(format_close_by_market, axis=1)
+    for column in ["RS_Rank", "RS_6M", "ADV50"]:
+        if column in display_df.columns:
+            display_df[column] = display_df[column].map(format_number)
+    left_columns = {"Ticker", "NearHigh", "QuietBase", "TrendTemplate"}
+    columns = list(display_df.columns)
+    rows = [
+        [
+            _rich_cell(column, header=True, align="left" if column in left_columns else "right")
+            for column in columns
+        ]
+    ]
+    for _, row in display_df.iterrows():
+        cells = []
+        for column in columns:
+            if column == "Ticker":
+                ticker = str(row[column])
+                cells.append(
+                    _rich_cell("", align="left")
+                    | {
+                        "text": {
+                            "type": "url",
+                            "text": format_display_ticker(ticker) or ticker,
+                            "url": ticker_url(ticker),
+                        }
+                    }
+                )
+            else:
+                cells.append(
+                    _rich_cell(str(row[column]), align="left" if column in left_columns else "right")
+                )
+        rows.append(cells)
+    return {
+        "type": "table",
+        "cells": rows,
+        "is_bordered": True,
+        "is_striped": True,
+        "is_compact": True,
+    }
+
+
+def build_telegram_rich_message(
+    result: pd.DataFrame,
+    generated_at_utc: str,
+    freshness: dict[str, str],
+    skipped_markets: dict[str, str],
+    market_regimes: dict[str, dict[str, object]],
+) -> dict[str, object]:
+    """Build an InputRichMessage (Bot API sendRichMessage) with explicit blocks."""
+    working = result.copy()
+    summary_rows = []
+    if not working.empty:
+        summary_rows = (
+            working.groupby("Market")[["BreakoutReady", "VCPCandidate", "Watchlist"]]
+            .sum()
+            .rename(
+                columns={
+                    "BreakoutReady": "Breakouts",
+                    "VCPCandidate": "VCPs",
+                    "Watchlist": "WatchlistNames",
+                }
+            )
+            .reset_index()
+            .to_dict("records")
+        )
+
+    def heading(text: str, size: int) -> dict[str, object]:
+        return {"type": "heading", "text": text, "size": size}
+
+    def paragraph(text: object) -> dict[str, object]:
+        return {"type": "paragraph", "text": text}
+
+    def labeled(label: str, value: str) -> dict[str, object]:
+        return paragraph([f"{label}: ", {"type": "code", "text": value}])
+
+    blocks: list[dict[str, object]] = [
+        heading("Daily Market Scan", 1),
+        labeled("Generated at (UTC)", generated_at_utc),
+        heading("Scan Summary", 2),
+    ]
+    if not summary_rows:
+        blocks.append(paragraph("No summary available."))
+    else:
+        summary_df = pd.DataFrame(summary_rows)
+        summary_columns = list(summary_df.columns)
+        summary_cells = [
+            [
+                _rich_cell(column, header=True, align="left" if column == "Market" else "right")
+                for column in summary_columns
+            ]
+        ]
+        for _, row in summary_df.iterrows():
+            summary_cells.append(
+                [
+                    _rich_cell(str(row[column]), align="left" if column == "Market" else "right")
+                    for column in summary_columns
+                ]
+            )
+        blocks.append(
+            {
+                "type": "table",
+                "cells": summary_cells,
+                "is_bordered": True,
+                "is_striped": True,
+                "is_compact": True,
+            }
+        )
+
+    for market in MARKETS:
+        blocks.append(heading(f"{market} Market", 2))
+        blocks.append(labeled("Latest market date", freshness.get(market, "unknown")))
+        regime = market_regimes.get(market, {})
+        if regime:
+            blocks.append(
+                labeled(
+                    "Market trend",
+                    f"{'ON' if regime.get('MarketTrendOK') else 'OFF'} "
+                    f"(50DMA={regime.get('Above50DMA')}, 200DMA={regime.get('Above200DMA')})",
+                )
+            )
+        if market in skipped_markets:
+            blocks.append(paragraph(f"Status: skipped ({skipped_markets[market]})"))
+            continue
+
+        market_rows = working[working["Market"] == market]
+        breakout_rows = market_rows[market_rows["BreakoutReady"]].head(10)
+        vcp_rows = market_rows[market_rows["VCPCandidate"]].head(10)
+        watchlist_rows = market_rows[market_rows["Watchlist"]].head(10)
+        near_miss_rows = market_rows[
+            (market_rows["NearHigh"])
+            & (~market_rows["VCPCandidate"])
+        ].sort_values(["RS_Rank", "TrendTemplate"], ascending=[False, False]).head(10)
+
+        standard_columns = ["Ticker", "Close", "RS_Rank", "NearHigh", "QuietBase", "RS_6M"]
+        sections = [
+            ("Breakout Candidates", breakout_rows, standard_columns, "No breakout candidates passed today."),
+            ("VCP Candidates", vcp_rows, standard_columns, "No VCP candidates passed today."),
+            ("Watchlist", watchlist_rows, standard_columns, "No watchlist names passed today."),
+            (
+                "VCP Near Miss",
+                near_miss_rows,
+                ["Ticker", "Close", "RS_Rank", "TrendTemplate", "NearHigh", "QuietBase"],
+                "No near-miss names passed today.",
+            ),
+        ]
+        for title, rows, columns, empty_text in sections:
+            blocks.append(heading(title, 3))
+            if rows.empty:
+                blocks.append(paragraph(empty_text))
+            else:
+                blocks.append(_rich_table_block(rows[columns]))
+
+    return {"blocks": blocks, "skip_entity_detection": True}
 
 
 def _html_table(df: pd.DataFrame, columns: list[str] | None = None) -> str:
@@ -1425,6 +1591,13 @@ def main() -> None:
         skipped_markets=skipped_markets,
         market_regimes=market_regimes,
     )
+    telegram_payload = build_telegram_rich_message(
+        result=result,
+        generated_at_utc=now_utc.isoformat(),
+        freshness=freshness,
+        skipped_markets=skipped_markets,
+        market_regimes=market_regimes,
+    )
     html_report = build_html_report(
         result=result,
         generated_at_utc=now_utc.isoformat(),
@@ -1436,6 +1609,9 @@ def main() -> None:
     )
     REPORT_PATH.write_text(report, encoding="utf-8")
     HTML_REPORT_PATH.write_text(html_report, encoding="utf-8")
+    TELEGRAM_PAYLOAD_PATH.write_text(
+        json.dumps(telegram_payload, ensure_ascii=False), encoding="utf-8"
+    )
     print(report)
 
 

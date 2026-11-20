@@ -70,9 +70,10 @@ Add these repository secrets in GitHub:
 - `TELEGRAM_BOT_TOKEN`
 - `TELEGRAM_CHAT_ID`
 
-After those are set, each scheduled run will send a Telegram message with the latest report text:
+After those are set, each scheduled run runs `send_telegram_report.py`, which sends the latest report to Telegram:
 
-- message body: `scan_report.md` content (truncated to fit Telegram limits if needed)
+- preferred: a Telegram Rich Message (`sendRichMessage`) built from `scan_report_telegram.json`, with real tables and ticker links
+- fallback: if the rich send is rejected or the payload file is missing, a plain text message with the `scan_report.md` content (truncated to fit Telegram limits if needed)
 - recipient: the configured Telegram chat ID
 
 ## Notes
