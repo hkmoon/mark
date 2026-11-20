@@ -354,9 +354,19 @@ def build_telegram_rich_message(
     def labeled(label: str, value: str) -> dict[str, object]:
         return paragraph([f"{label}: ", {"type": "code", "text": value}])
 
+    try:
+        generated_dt = datetime.fromisoformat(generated_at_utc)
+        if generated_dt.tzinfo is None:
+            generated_dt = generated_dt.replace(tzinfo=UTC)
+        generated_line = labeled(
+            "Generated at", generated_dt.astimezone(UTC).strftime("%Y-%m-%d %H:%M UTC")
+        )
+    except (TypeError, ValueError):
+        generated_line = labeled("Generated at (UTC)", str(generated_at_utc))
+
     blocks: list[dict[str, object]] = [
         heading("Daily Market Scan", 1),
-        labeled("Generated at (UTC)", generated_at_utc),
+        generated_line,
         heading("Scan Summary", 2),
     ]
     if not summary_rows:
@@ -414,22 +424,26 @@ def build_telegram_rich_message(
 
         standard_columns = ["Ticker", "Close", "RS_Rank", "NearHigh", "QuietBase", "RS_6M"]
         sections = [
-            ("Breakout Candidates", breakout_rows, standard_columns, "No breakout candidates passed today."),
-            ("VCP Candidates", vcp_rows, standard_columns, "No VCP candidates passed today."),
-            ("Watchlist", watchlist_rows, standard_columns, "No watchlist names passed today."),
+            ("Breakout Candidates", breakout_rows, standard_columns),
+            ("VCP Candidates", vcp_rows, standard_columns),
+            ("Watchlist", watchlist_rows, standard_columns),
             (
                 "VCP Near Miss",
                 near_miss_rows,
                 ["Ticker", "Close", "RS_Rank", "TrendTemplate", "NearHigh", "QuietBase"],
-                "No near-miss names passed today.",
             ),
         ]
-        for title, rows, columns, empty_text in sections:
-            blocks.append(heading(title, 3))
+        empty_titles = [title for title, rows, _ in sections if rows.empty]
+        if len(empty_titles) == len(sections):
+            blocks.append(paragraph("No candidates today."))
+            continue
+        for title, rows, columns in sections:
             if rows.empty:
-                blocks.append(paragraph(empty_text))
-            else:
-                blocks.append(_rich_table_block(rows[columns]))
+                continue
+            blocks.append(heading(title, 3))
+            blocks.append(_rich_table_block(rows[columns]))
+        if empty_titles:
+            blocks.append(paragraph(f"None today: {', '.join(empty_titles)}."))
 
     return {"blocks": blocks, "skip_entity_detection": True}
 
